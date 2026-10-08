@@ -35,7 +35,8 @@ class GitHubConnector(Connector):
     async def fetch(self, target: str, seed_type: SeedType, ctx: ConnectorContext) -> dict[str, Any]:
         headers = self._headers(ctx)
         logins: list[str]
-        search_url = None
+        search_url = commit_url = None
+        commit_logins: dict[str, str | None] = {}
         if seed_type == SeedType.USERNAME:
             logins = [target]
         else:
@@ -44,6 +45,17 @@ class GitHubConnector(Connector):
             check_status(resp, self.label)
             search_url = str(resp.url)
             logins = [item["login"] for item in resp.json().get("items", [])][:MAX_SEARCH_RESULTS]
+            if seed_type == SeedType.EMAIL:
+                # Public commits record their author email; GitHub links them to the account.
+                commits = await ctx.http.get(f"{API}/search/commits",
+                                             params={"q": f"author-email:{target}", "per_page": 10}, headers=headers)
+                if commits.status_code == 200:
+                    commit_url = str(commits.url)
+                    for item in commits.json().get("items", []):
+                        login = (item.get("author") or {}).get("login")
+                        if login and login not in commit_logins:
+                            commit_logins[login] = item.get("html_url")
+                    logins += [lg for lg in commit_logins if lg not in logins][:MAX_SEARCH_RESULTS]
 
         users = []
         for login in logins:
@@ -59,7 +71,8 @@ class GitHubConnector(Connector):
             if r.status_code == 200:
                 repos = r.json()
             users.append({"user": user, "repos": repos})
-        return {"mode": seed_type.value, "search_url": search_url, "users": users}
+        return {"mode": seed_type.value, "search_url": search_url, "users": users,
+                "commit_url": commit_url, "commit_logins": commit_logins}
 
     def normalize(self, raw: dict[str, Any], target: str, seed_type: SeedType) -> ConnectorResult:
         f = Findings(self.name)
@@ -91,7 +104,17 @@ class GitHubConnector(Connector):
             )
             ref, src = emit_profile(f, profile, category=self.category, reliability=self.reliability,
                                     source_url=f"{API}/users/{u['login']}")
-            if seed_type == SeedType.EMAIL and raw.get("search_url") and not u.get("email"):
+            if seed_type == SeedType.EMAIL and u["login"] in (raw.get("commit_logins") or {}):
+                commit_src = f.source(
+                    name=self.label, category=SourceCategory.SEARCH, kind="commit_search", url=raw["commit_url"],
+                    reliability=self.reliability, title=f"Public commits authored as {target}",
+                )
+                f.observe(ref, "email", target, commit_src, 0.85)
+                if commit := raw["commit_logins"][u["login"]]:
+                    f.mention(url=commit, title=f"Public commit by @{u['login']} with author email {target}",
+                              snippet=None, category=SourceCategory.CODE, association="Commit author email",
+                              source=commit_src, confidence=0.85, entity=ref)
+            elif seed_type == SeedType.EMAIL and raw.get("search_url") and not u.get("email"):
                 # GitHub's `in:email` search only matches publicly listed addresses.
                 search_src = f.source(
                     name=self.label, category=SourceCategory.SEARCH, kind="api_search", url=raw["search_url"],

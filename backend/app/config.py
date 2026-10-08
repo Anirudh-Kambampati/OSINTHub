@@ -30,7 +30,10 @@ class Settings(BaseSettings):
     retention_days: int | None = None
 
     # Outbound HTTP behaviour
-    user_agent: str = "OSINT-Console/0.1 (public-information research; respects robots.txt)"
+    user_agent_base: str = "OSINT-Console/1.0 (public-information research; respects robots.txt)"
+    # Email or URL identifying the operator. Added to the User-Agent so sources can reach you;
+    # some (Wikimedia) refuse anonymous automated clients.
+    operator_contact: str | None = None
     http_timeout: float = 12.0
     connector_timeout: float = 30.0
     max_html_bytes: int = 2_000_000
@@ -40,6 +43,7 @@ class Settings(BaseSettings):
     # Investigation limits
     max_concurrent_investigations: int = 4
     max_pivot_websites: int = 3
+    max_pivot_ips: int = 3
     max_documents: int = 3
     create_rate_limit_per_minute: int = 10
     login_rate_limit_per_minute: int = 10
@@ -53,6 +57,11 @@ class Settings(BaseSettings):
     x_bearer_token: SecretStr | None = None
     brave_search_api_key: SecretStr | None = None
 
+    @property
+    def user_agent(self) -> str:
+        if self.operator_contact:
+            return self.user_agent_base[:-1] + f"; contact: {self.operator_contact})"
+        return self.user_agent_base
 
     @property
     def is_production(self) -> bool:

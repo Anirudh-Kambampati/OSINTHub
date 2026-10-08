@@ -19,6 +19,8 @@ from app.core.net import ResponseTooLarge, UnsafeURLError
 from app.core.text import clean_text, parse_datetime
 
 MAX_EMAILS = 5
+FINGERPRINT_HEADERS = {"server": "Server", "x-powered-by": "Powered by", "x-generator": "Generator",
+                       "via": "Via", "x-served-by": "Served by"}
 MAX_LINKED = 20
 
 
@@ -68,7 +70,8 @@ class WebsiteConnector(Connector):
             return {"url": url, "html": None}
         if "html" not in resp.content_type:
             raise ConnectorError(f"Not an HTML page ({resp.content_type or 'unknown type'}).")
-        return {"url": resp.url, "html": resp.text}
+        headers = {k.lower(): v for k, v in resp.headers.items() if k.lower() in FINGERPRINT_HEADERS}
+        return {"url": resp.url, "html": resp.text, "headers": headers}
 
     def normalize(self, raw: dict[str, Any], target: str, seed_type: SeedType) -> ConnectorResult:
         f = Findings(self.name)
@@ -88,6 +91,10 @@ class WebsiteConnector(Connector):
         f.observe(site, "description", _meta(soup, "description") or _meta(soup, "og:description"), src, 0.85)
         author = _meta(soup, "author")
         f.observe(site, "name", author, src, 0.6)
+        for header, value in (raw.get("headers") or {}).items():
+            f.observe(site, "technology", f"{FINGERPRINT_HEADERS[header]}: {value}", src, 0.85)
+        if generator := _meta(soup, "generator"):
+            f.observe(site, "technology", f"Generator: {generator}", src, 0.85)
         if og := _meta(soup, "og:image"):
             f.observe(site, "image", urljoin(url, og), src, 0.6)
 

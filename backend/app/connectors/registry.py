@@ -11,8 +11,14 @@ from app.connectors.github import GitHubConnector
 from app.connectors.gitlab import GitLabConnector
 from app.connectors.gravatar import GravatarConnector
 from app.connectors.hackernews import HackerNewsConnector, HackerNewsSearchConnector
+from app.connectors.infra import EmailIntelConnector, IpIntelConnector, SecurityTxtConnector
 from app.connectors.keybase import KeybaseConnector
 from app.connectors.medium import MediumConnector
+from app.connectors.people import OrcidConnector, StackExchangeConnector, WikidataConnector
+from app.connectors.platforms import (
+    ChessComConnector, CodebergConnector, CodewarsConnector, CratesIoConnector, DockerHubConnector,
+    HuggingFaceConnector, LichessConnector, MastodonConnector, NpmConnector,
+)
 from app.connectors.web import DocumentConnector, WebsiteConnector
 
 CONNECTORS: dict[str, Connector] = {
@@ -25,12 +31,25 @@ CONNECTORS: dict[str, Connector] = {
         KeybaseConnector(),
         BlueskyConnector(),
         MediumConnector(),
+        MastodonConnector(),
+        CodebergConnector(),
+        HuggingFaceConnector(),
+        NpmConnector(),
+        CratesIoConnector(),
+        DockerHubConnector(),
+        StackExchangeConnector(),
+        CodewarsConnector(),
+        ChessComConnector(),
+        LichessConnector(),
+        OrcidConnector(),
+        WikidataConnector(),
         RedditConnector(),
         XConnector(),
         YouTubeConnector(),
         InstagramConnector(),
         LinkedInConnector(),
         GravatarConnector(),
+        EmailIntelConnector(),
         HackerNewsSearchConnector(),
         BraveSearchConnector(),
         WebsiteConnector(),
@@ -38,6 +57,8 @@ CONNECTORS: dict[str, Connector] = {
         RdapConnector(),
         CertificatesConnector(),
         WaybackConnector(),
+        SecurityTxtConnector(),
+        IpIntelConnector(),
         DocumentConnector(),
     )
 }

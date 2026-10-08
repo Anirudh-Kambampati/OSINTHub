@@ -19,6 +19,16 @@ PLATFORM_LABELS = {
     "gravatar": "Gravatar",
     "mastodon": "Mastodon",
     "stackoverflow": "Stack Overflow",
+    "codeberg": "Codeberg",
+    "cratesio": "crates.io",
+    "dockerhub": "Docker Hub",
+    "huggingface": "Hugging Face",
+    "chesscom": "Chess.com",
+    "lichess": "Lichess",
+    "codewars": "Codewars",
+    "npm": "npm",
+    "orcid": "ORCID",
+    "wikidata": "Wikidata",
 }
 
 _HANDLE = r"([A-Za-z0-9_.\-]{1,64})"
@@ -35,8 +45,18 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("keybase", re.compile(rf"^(?:www\.)?keybase\.io/{_HANDLE}/?$")),
     ("bluesky", re.compile(rf"^bsky\.app/profile/{_HANDLE}/?$")),
     ("gravatar", re.compile(rf"^(?:[a-z]{{2}}\.)?gravatar\.com/{_HANDLE}/?$")),
+    ("codeberg", re.compile(rf"^codeberg\.org/{_HANDLE}/?$")),
+    ("huggingface", re.compile(rf"^huggingface\.co/{_HANDLE}/?$")),
+    ("dockerhub", re.compile(rf"^hub\.docker\.com/u/{_HANDLE}/?$")),
+    ("chesscom", re.compile(rf"^(?:www\.)?chess\.com/member/{_HANDLE}/?$")),
+    ("lichess", re.compile(rf"^lichess\.org/@/{_HANDLE}/?$")),
+    ("codewars", re.compile(rf"^(?:www\.)?codewars\.com/users/{_HANDLE}/?$")),
+    ("npm", re.compile(rf"^(?:www\.)?npmjs\.com/~{_HANDLE}/?$")),
+    ("cratesio", re.compile(rf"^crates\.io/users/{_HANDLE}/?$")),
+    ("orcid", re.compile(r"^orcid\.org/(\d{4}-\d{4}-\d{4}-\d{3}[\dX])/?$")),
 ]
-_RESERVED = {"about", "login", "signup", "explore", "settings", "home", "search", "share", "intent", "orgs", "features"}
+_RESERVED = {"about", "login", "signup", "explore", "settings", "home", "search", "share", "intent", "orgs", "features",
+             "models", "datasets", "spaces", "docs", "blog", "pricing"}
 
 
 def parse_social_url(url: str) -> str | None:

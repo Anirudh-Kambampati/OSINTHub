@@ -82,7 +82,9 @@ class Orchestrator:
 
             done_targets = {normalize_url(t) for _, _, t, _ in phase1 if "." in t}
             websites = self._select_pivots(pivots, "website", self.settings.max_pivot_websites, done_targets)
-            phase2 = await self._create_runs(investigation_id, websites, "website", 2)
+            ips = self._select_pivots(pivots, "ip", self.settings.max_pivot_ips, set())
+            phase2 = (await self._create_runs(investigation_id, websites, "website", 2)
+                      + await self._create_runs(investigation_id, ips, "ip", 2))
             executed += [r[0] for r in phase2]
             pivots = await self._run_phase(investigation_id, phase2, write_lock)
 
@@ -124,7 +126,7 @@ class Orchestrator:
         for p in pivots:
             if p.kind != kind:
                 continue
-            key = normalize_url(p.value)
+            key = p.value if kind == "ip" else normalize_url(p.value)
             if key in exclude:
                 continue
             counts[key] = counts.get(key, 0) + 1

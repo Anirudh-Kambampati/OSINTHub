@@ -3,7 +3,8 @@
 from typing import Any
 
 from app.connectors.base import (
-    Connector, ConnectorContext, ConnectorError, ConnectorResult, EntityRef, Findings, check_status, domain_of_seed,
+    Connector, ConnectorContext, ConnectorError, ConnectorResult, EntityRef, Findings, Pivot, check_status,
+    domain_of_seed,
 )
 from app.core.classify import Classification
 from app.core.enums import EntityKind, EventKind, Reliability, RelType, RunStatus, SeedType, SourceCategory
@@ -12,6 +13,7 @@ from app.core.net import ResponseTooLarge
 from app.core.text import parse_datetime
 
 DOMAIN_SEEDS = frozenset({SeedType.DOMAIN, SeedType.URL, SeedType.EMAIL})
+MAX_IP_PIVOTS = 3
 
 
 def domain_ref(f: Findings, domain: str) -> EntityRef:
@@ -73,7 +75,8 @@ class DnsConnector(_DomainConnector):
                     f.observe(dom, "dmarc", data, src, 0.95)
         if not count:
             return ConnectorResult(RunStatus.NOT_FOUND, f, "No public DNS records returned.")
-        return ConnectorResult(RunStatus.FOUND, f)
+        ips = [o.value for o in f.observations if o.attribute == "ip_address"]
+        return ConnectorResult(RunStatus.FOUND, f, pivots=[Pivot("ip", ip) for ip in ips[:MAX_IP_PIVOTS]])
 
 
 class RdapConnector(_DomainConnector):
@@ -115,7 +118,7 @@ class RdapConnector(_DomainConnector):
                 f.event(EventKind.DOMAIN, f"Domain {target} registration updated", when, src, entity=dom)
         for ent in d.get("entities") or []:
             if "registrar" in (ent.get("roles") or []):
-                name = _vcard_fn(ent.get("vcardArray"))
+                name = vcard_fn(ent.get("vcardArray"))
                 if name:
                     f.observe(dom, "registrar", name, src, 0.95)
         for ns in d.get("nameservers") or []:
@@ -126,7 +129,7 @@ class RdapConnector(_DomainConnector):
         return ConnectorResult(RunStatus.FOUND, f)
 
 
-def _vcard_fn(vcard: Any) -> str | None:
+def vcard_fn(vcard: Any) -> str | None:
     try:
         for prop in vcard[1]:
             if prop[0] == "fn":

@@ -267,10 +267,8 @@ class Connector(ABC):
 
     async def run(self, target: str, seed_type: SeedType, ctx: ConnectorContext) -> ConnectorResult:
         if not self.is_configured(ctx.settings):
-            raise AuthRequired(
-                f"{self.label} requires official API credentials ({', '.join(self.requires)}); "
-                "configure them server-side to enable this source."
-            )
+            names = ", ".join(f"OSINT_{r.upper()}" for r in self.requires)
+            raise AuthRequired(f"{self.label} needs server configuration ({names}) before it can be queried.")
         raw = await self.fetch(target, seed_type, ctx)
         return self.normalize(raw, target, seed_type)
 

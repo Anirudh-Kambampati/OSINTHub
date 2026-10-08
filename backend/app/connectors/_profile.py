@@ -30,6 +30,8 @@ class PublicProfile:
     # Accounts verified by the platform (e.g. Keybase cryptographic proofs).
     verified_accounts: list[str] = field(default_factory=list)
     stats: dict[str, Any] = field(default_factory=dict)
+    # Entity key/label override when the handle alone isn't unique (e.g. Mastodon user@instance).
+    key: str | None = None
 
 
 def emit_profile(
@@ -44,11 +46,11 @@ def emit_profile(
     label = PLATFORM_LABELS.get(p.platform, p.platform)
     src = f.source(
         name=label, category=category, kind="public_profile", url=source_url or p.url,
-        reliability=reliability, title=f"{label} public profile @{p.username}",
+        reliability=reliability, title=f"{label} public profile @{p.key or p.username}",
     )
-    key = profile_ref(p.platform, p.username)
+    key = profile_ref(p.platform, p.key or p.username)
     ref = f.entity(
-        key.kind, key.key, f"@{p.username}",
+        key.kind, key.key, f"@{p.key or p.username}",
         platform=p.platform, platform_label=label, url=p.url, stats=p.stats or None,
     )
     f.observe(ref, "username", p.username, src, min(0.99, confidence + 0.09))
