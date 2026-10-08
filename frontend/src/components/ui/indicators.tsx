@@ -71,9 +71,9 @@ export function PlatformMark({ platform, size = 28 }: { platform: string | null 
         width: size,
         height: size,
         fontSize: Math.max(9, size * 0.36),
-        color: `hsl(${meta.hue} 70% 72%)`,
-        background: `hsl(${meta.hue} 30% 16%)`,
-        border: `1px solid hsl(${meta.hue} 30% 24%)`,
+        color: `light-dark(hsl(${meta.hue} 55% 34%), hsl(${meta.hue} 70% 72%))`,
+        background: `light-dark(hsl(${meta.hue} 60% 94%), hsl(${meta.hue} 30% 16%))`,
+        border: `1px solid light-dark(hsl(${meta.hue} 40% 84%), hsl(${meta.hue} 30% 24%))`,
       }}
     >
       {meta.mono}

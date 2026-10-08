@@ -146,7 +146,7 @@ export function SearchBar({ autoFocus, size = "md" }: { autoFocus?: boolean; siz
                 type="submit"
                 onMouseDown={(e) => e.preventDefault()}
                 disabled={create.isPending || isFetching}
-                className="flex w-full items-center justify-between rounded-md bg-accent px-3 py-2 text-[13px] font-medium text-[#0b0d10] hover:brightness-110 disabled:opacity-60"
+                className="flex w-full items-center justify-between rounded-md bg-accent px-3 py-2 text-[13px] font-medium text-[var(--on-accent)] hover:brightness-110 disabled:opacity-60"
               >
                 {create.isPending ? "Starting investigation…" : "Search public sources"}
                 <ArrowRight className="size-4" />

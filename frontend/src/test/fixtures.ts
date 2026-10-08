@@ -1,4 +1,13 @@
-import type { Entity, IdentityAttribute, InvestigationDetail, ProfileView, Run, Source, Stats } from "../lib/types";
+import type { AuthStatus, Entity, IdentityAttribute, InvestigationDetail, ProfileView, Run, Source, Stats } from "../lib/types";
+
+export const signedIn: AuthStatus = {
+  user: {
+    id: "user-1", email: "admin@example.com", name: "Admin", role: "admin", is_active: true,
+    created_at: "2026-10-01T00:00:00Z", last_login_at: "2026-10-07T18:00:00Z",
+  },
+  needs_setup: false,
+  allow_registration: false,
+};
 
 export const source = (over: Partial<Source> = {}): Source => ({
   id: "src-gh",
@@ -14,6 +23,8 @@ export const source = (over: Partial<Source> = {}): Source => ({
 });
 
 export const stats = (over: Partial<Stats> = {}): Stats => ({
+  new_entities: 0,
+  new_mentions: 0,
   profiles: 2,
   matched_profiles: 2,
   mentions: 0,
@@ -47,6 +58,13 @@ export const run = (over: Partial<Run> = {}): Run => ({
 
 export const investigation = (over: Partial<InvestigationDetail> = {}): InvestigationDetail => ({
   id: "inv-1",
+  owner_id: "user-1",
+  owner_name: "Admin",
+  tags: [],
+  monitor_interval_hours: null,
+  next_run_at: null,
+  previous_completed_at: null,
+  run_count: 1,
   seed: "anirudh123",
   seed_type: "username",
   title: "Anirudh K",
@@ -74,12 +92,16 @@ export const profileEntity = (over: Partial<Entity> = {}): Entity => ({
     score: 0.95,
     level: "very_high",
     label: "High-confidence match",
+    cluster: 0,
+    decision: null,
+    decision_note: null,
     factors: [
       { code: "seed_username_exact", label: "Exact username match (@anirudh123)", weight: 0.35, related_entity_id: null },
       { code: "shared_email", label: "Same public email as DEV @anirudh123", weight: 0.4, related_entity_id: "ent-dev" },
     ],
   },
   avatar_observation_id: null,
+  is_new: false,
   ...over,
 });
 
@@ -126,6 +148,7 @@ export const profileView = (over: Partial<ProfileView> = {}): ProfileView => ({
     data: { subject: true },
     match: null,
     avatar_observation_id: null,
+    is_new: false,
   },
   seed_entity_id: "ent-seed",
   confidence: 0.82,

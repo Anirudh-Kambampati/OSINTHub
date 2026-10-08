@@ -9,6 +9,7 @@ import type { InvestigationDetail, ProfileView } from "../../lib/types";
 import { ConfidenceBadge, InvestigationStatusBadge } from "../ui/indicators";
 import { Button, Skeleton } from "../ui/primitives";
 import { ProxiedAvatar } from "../ui/ProxiedAvatar";
+import { ExportMenu, InvestigationToolbar } from "./InvestigationToolbar";
 
 const SUBJECT_DESCRIPTION: Record<string, string> = {
   username: "Public identity profile",
@@ -101,9 +102,11 @@ export function InvestigationHeader({ inv, profile }: { inv: InvestigationDetail
               </dl>
             )}
             {inv.error && <p className="mt-2 text-xs text-[var(--st-not-verified)]">{inv.error}</p>}
+            <InvestigationToolbar inv={inv} />
           </div>
 
           <div className="flex shrink-0 gap-2">
+            <ExportMenu inv={inv} />
             <Button
               icon={<RefreshCw className={clsx("size-3.5", running && "animate-spin")} />}
               onClick={() => rerun.mutate()}

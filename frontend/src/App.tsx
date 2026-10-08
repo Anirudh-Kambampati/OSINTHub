@@ -2,11 +2,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Link, Outlet, RouterProvider, createBrowserRouter, type RouteObject } from "react-router";
 import { AppShell } from "./components/layout/AppShell";
 import { EmptyState } from "./components/ui/primitives";
+import { RequireAuth, UnauthorizedRedirect } from "./context/auth";
 import { EvidenceProvider } from "./context/evidence";
 import { ApiError } from "./lib/api";
 import { HomePage } from "./pages/HomePage";
 import { InvestigationLayout } from "./pages/InvestigationLayout";
 import { InvestigationsPage } from "./pages/InvestigationsPage";
+import { LoginPage } from "./pages/LoginPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { OverviewTab } from "./pages/tabs/OverviewTab";
 import { MentionsTab, ProfilesTab, TimelineTab } from "./pages/tabs/OtherTabs";
@@ -27,6 +29,7 @@ export function createQueryClient() {
 function Root() {
   return (
     <EvidenceProvider>
+      <UnauthorizedRedirect />
       <Outlet />
     </EvidenceProvider>
   );
@@ -36,8 +39,13 @@ export const routes: RouteObject[] = [
   {
     element: <Root />,
     children: [
+      { path: "login", element: <LoginPage /> },
       {
-        element: <AppShell />,
+        element: (
+          <RequireAuth>
+            <AppShell />
+          </RequireAuth>
+        ),
         children: [
           { index: true, element: <HomePage /> },
           { path: "investigations", element: <InvestigationsPage /> },

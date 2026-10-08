@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { IdentityCard } from "../../components/investigation/IdentityCard";
 import { InvestigationStats } from "../../components/investigation/InvestigationStats";
 import { MentionCard } from "../../components/investigation/MentionCard";
+import { NotesPanel } from "../../components/investigation/NotesPanel";
 import { PlatformPresence } from "../../components/investigation/PlatformPresence";
 import { ProfileGrid } from "../../components/investigation/ProfileCard";
 import { RunProgress } from "../../components/investigation/RunProgress";
@@ -116,6 +117,7 @@ export function OverviewTab() {
           )}
         </>
       )}
+      <NotesPanel investigationId={inv.id} />
     </div>
   );
 }

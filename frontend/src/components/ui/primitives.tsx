@@ -42,7 +42,7 @@ export function Button({ variant = "secondary", size = "md", icon, className, ch
       className={clsx(
         "inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
         size === "sm" ? "h-7 px-2.5 text-xs" : "h-8 px-3 text-[13px]",
-        variant === "primary" && "bg-accent text-[#0b0d10] hover:brightness-110",
+        variant === "primary" && "bg-accent text-[var(--on-accent)] hover:brightness-110",
         variant === "secondary" && "border border-line-strong bg-surface-2 text-fg hover:bg-surface-3",
         variant === "ghost" && "text-muted hover:bg-surface-2 hover:text-fg",
         variant === "danger" && "border border-line-strong bg-surface-2 text-[var(--st-error)] hover:bg-surface-3",

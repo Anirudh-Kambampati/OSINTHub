@@ -3,7 +3,9 @@ import { RunStatusIcon } from "../../components/investigation/RunProgress";
 import { SourceRow } from "../../components/investigation/SourceRow";
 import { RunStatusBadge } from "../../components/ui/indicators";
 import { Card, EmptyState, ExternalLink, SegmentedControl, Skeleton } from "../../components/ui/primitives";
-import { useSources } from "../../hooks/queries";
+import { useState } from "react";
+import { useAccessLog, useSources } from "../../hooks/queries";
+import { formatDateTime } from "../../lib/format";
 import { SOURCE_GROUPS } from "../../lib/meta";
 import { useInvestigationContext } from "../InvestigationLayout";
 
@@ -80,6 +82,8 @@ export function SourcesTab() {
         )}
       </Card>
 
+      <AccessLogCard investigationId={inv.id} />
+
       <Card title={`Retrievals (${retrievals.length})`}>
         {isLoading ? <Skeleton className="h-32" /> : retrievals.length === 0 ? (
           <EmptyState title="No retrievals yet" className="py-6">
@@ -94,5 +98,52 @@ export function SourcesTab() {
         )}
       </Card>
     </div>
+  );
+}
+
+function AccessLogCard({ investigationId }: { investigationId: string }) {
+  const [open, setOpen] = useState(false);
+  const { data, isLoading } = useAccessLog(investigationId, open);
+  return (
+    <Card
+      title="Access log"
+      actions={
+        <button type="button" onClick={() => setOpen((o) => !o)} className="text-xs text-accent hover:underline" aria-expanded={open}>
+          {open ? "Hide" : "Show every request"}
+        </button>
+      }
+      bodyClassName={open ? "p-0" : undefined}
+    >
+      {!open ? (
+        <p className="text-xs text-subtle">Every outbound request made for this investigation, with status codes. Secrets are redacted.</p>
+      ) : isLoading || !data ? (
+        <Skeleton className="m-4 h-24" />
+      ) : (
+        <div className="max-h-96 overflow-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="sticky top-0 border-b border-line bg-surface text-subtle">
+              <tr>
+                <th className="px-4 py-1.5 font-medium">Time</th>
+                <th className="px-4 py-1.5 font-medium">Connector</th>
+                <th className="px-4 py-1.5 font-medium">Request</th>
+                <th className="px-4 py-1.5 font-medium">Result</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {data.map((r) => (
+                <tr key={r.id}>
+                  <td className="px-4 py-1.5 whitespace-nowrap text-subtle">{formatDateTime(r.at)}</td>
+                  <td className="px-4 py-1.5 text-muted">{r.connector}</td>
+                  <td className="max-w-lg truncate px-4 py-1.5 font-mono text-[11px] text-fg" title={r.url}>{r.method} {r.url}</td>
+                  <td className="px-4 py-1.5 font-mono" style={{ color: r.error || (r.status_code ?? 0) >= 400 ? "var(--st-error)" : "var(--text-muted)" }}>
+                    {r.status_code ?? r.error}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
   );
 }

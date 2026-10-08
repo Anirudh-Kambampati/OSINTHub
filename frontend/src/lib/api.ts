@@ -1,5 +1,11 @@
 import type {
+  AccessLogEntry,
+  AuditEvent,
+  AuthStatus,
   ClassifyResult,
+  Decision,
+  Note,
+  User,
   ConnectorInfo,
   EntityEvidence,
   Graph,
@@ -12,23 +18,10 @@ import type {
   TimelineEvent,
 } from "./types";
 
-const TOKEN_KEY = "osint.apiToken";
-
-export function getApiToken(): string | null {
-  try {
-    return sessionStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
-}
-
-export function setApiToken(token: string | null): void {
-  try {
-    if (token) sessionStorage.setItem(TOKEN_KEY, token);
-    else sessionStorage.removeItem(TOKEN_KEY);
-  } catch {
-    /* storage unavailable: token simply isn't remembered */
-  }
+/** Called when the server says the session is gone; the auth layer redirects to sign-in. */
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: (() => void) | null) {
+  onUnauthorized = fn;
 }
 
 export class ApiError extends Error {
@@ -42,10 +35,11 @@ export class ApiError extends Error {
 
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
-  const token = getApiToken();
-  if (token) headers.set("Authorization", `Bearer ${token}`);
+  // Required on state-changing requests; browsers can't send it cross-site without a preflight.
+  headers.set("X-OSINT-CSRF", "1");
   if (init.body) headers.set("Content-Type", "application/json");
-  const res = await fetch(path, { ...init, headers });
+  const res = await fetch(path, { ...init, headers, credentials: "same-origin" });
+  if (res.status === 401 && !path.startsWith("/api/auth/")) onUnauthorized?.();
   if (!res.ok) {
     let message = res.statusText || `HTTP ${res.status}`;
     try {
@@ -73,10 +67,53 @@ function qs(params: Record<string, string | number | boolean | null | undefined>
 
 const inv = (id: string) => `/api/investigations/${encodeURIComponent(id)}`;
 
+const send = (method: string, body?: unknown): RequestInit => ({
+  method,
+  body: body === undefined ? undefined : JSON.stringify(body),
+});
+
+export type CsvDataset = "attributes" | "profiles" | "mentions" | "observations" | "timeline" | "sources";
+
+export const exportUrls = (id: string) => ({
+  json: `${inv(id)}/export.json`,
+  report: `${inv(id)}/report.html`,
+  csv: (dataset: CsvDataset) => `${inv(id)}/export.csv?dataset=${dataset}`,
+});
+
 export const api = {
+  // auth & users
+  authStatus: () => json<AuthStatus>("/api/auth/status"),
+  login: (email: string, password: string) => json<User>("/api/auth/login", send("POST", { email, password })),
+  register: (email: string, name: string, password: string) =>
+    json<User>("/api/auth/register", send("POST", { email, name, password })),
+  logout: async () => {
+    await request("/api/auth/logout", { method: "POST" });
+  },
+  changePassword: async (current_password: string, new_password: string) => {
+    await request("/api/auth/password", send("POST", { current_password, new_password }));
+  },
+  users: () => json<User[]>("/api/users"),
+  createUser: (body: { email: string; name: string; password: string; role: User["role"] }) =>
+    json<User>("/api/users", send("POST", body)),
+  updateUser: (id: string, body: Partial<Pick<User, "role" | "is_active">> & { password?: string }) =>
+    json<User>(`/api/users/${encodeURIComponent(id)}`, send("PATCH", body)),
+  audit: () => json<AuditEvent[]>("/api/audit"),
+
   classify: (value: string) => json<ClassifyResult>("/api/classify", { method: "POST", body: JSON.stringify({ value }) }),
   connectors: () => json<ConnectorInfo[]>("/api/connectors"),
-  investigations: () => json<Investigation[]>("/api/investigations"),
+  investigations: (q?: string) => json<Investigation[]>(`/api/investigations${qs({ q })}`),
+  updateInvestigation: (id: string, body: { title?: string; tags?: string[]; monitor_interval_hours?: number | null }) =>
+    json<InvestigationDetail>(inv(id), send("PATCH", body)),
+  notes: (id: string) => json<Note[]>(`${inv(id)}/notes`),
+  addNote: (id: string, body: string) => json<Note>(`${inv(id)}/notes`, send("POST", { body })),
+  deleteNote: async (id: string, noteId: string) => {
+    await request(`${inv(id)}/notes/${encodeURIComponent(noteId)}`, { method: "DELETE" });
+  },
+  accessLog: (id: string) => json<AccessLogEntry[]>(`${inv(id)}/access-log`),
+  setDecision: (entityId: string, decision: Decision, note?: string) =>
+    json<EntityEvidence>(`/api/entities/${encodeURIComponent(entityId)}/decision`, send("PUT", { decision, note })),
+  clearDecision: (entityId: string) =>
+    json<EntityEvidence>(`/api/entities/${encodeURIComponent(entityId)}/decision`, { method: "DELETE" }),
   createInvestigation: (seed: string, seed_type?: SeedType) =>
     json<InvestigationDetail>("/api/investigations", { method: "POST", body: JSON.stringify({ seed, seed_type }) }),
   investigation: (id: string) => json<InvestigationDetail>(inv(id)),

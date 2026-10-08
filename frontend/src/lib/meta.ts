@@ -83,12 +83,31 @@ export const ATTRIBUTE_LABEL: Record<string, string> = {
   linked_account: "Linked account",
   avatar: "Profile image",
   image: "Image",
+  alias: "Alias",
+  domain: "Domain",
+  email_provider: "Email provider",
+  domain_accepts_mail: "Domain accepts mail",
+  technology: "Technology",
+  network_name: "Network",
+  network_owner: "Network owner",
+  network_range: "Address range",
+  country: "Country",
+  open_port: "Open port",
+  reverse_hostname: "Hostname",
+  known_vulnerability: "Known vulnerability",
+  tag: "Tag",
+  security_contact: "Security contact",
+  security_policy: "Disclosure policy",
+  security_txt_expires: "security.txt expires",
+  security_hiring: "Security hiring",
+  security_acknowledgments: "Acknowledgments",
 };
 
 export const attributeLabel = (a: string) => ATTRIBUTE_LABEL[a] ?? a.replace(/_/g, " ");
 
 export const IDENTITY_GROUPS: { title: string; attributes: string[] }[] = [
-  { title: "Identity", attributes: ["name", "username", "email", "phone", "location", "bio"] },
+  { title: "Identifiers", attributes: ["name", "alias", "username", "email", "phone", "location", "bio"] },
+  { title: "Email", attributes: ["email_provider", "domain", "domain_accepts_mail"] },
   { title: "Affiliations & web", attributes: ["organization", "occupation", "website", "title", "description"] },
   {
     title: "Registration",
@@ -96,7 +115,15 @@ export const IDENTITY_GROUPS: { title: string; attributes: string[] }[] = [
   },
   {
     title: "Infrastructure",
-    attributes: ["nameserver", "mail_server", "ip_address", "spf", "dmarc", "certificate_issuer", "subdomain_count"],
+    attributes: ["nameserver", "mail_server", "ip_address", "spf", "dmarc", "certificate_issuer", "subdomain_count", "technology"],
+  },
+  {
+    title: "Network exposure",
+    attributes: ["network_owner", "network_name", "network_range", "country", "open_port", "reverse_hostname", "known_vulnerability"],
+  },
+  {
+    title: "Security contacts",
+    attributes: ["security_contact", "security_policy", "security_txt_expires", "security_acknowledgments", "security_hiring"],
   },
 ];
 
@@ -162,4 +189,33 @@ export const PLATFORM_META: Record<string, { label: string; mono: string; hue: n
   linkedin: { label: "LinkedIn", mono: "IN", hue: 205 },
   gravatar: { label: "Gravatar", mono: "GV", hue: 190 },
   mastodon: { label: "Mastodon", mono: "MA", hue: 260 },
+  codeberg: { label: "Codeberg", mono: "CB", hue: 200 },
+  huggingface: { label: "Hugging Face", mono: "HF", hue: 45 },
+  npm: { label: "npm", mono: "NP", hue: 355 },
+  cratesio: { label: "crates.io", mono: "CR", hue: 30 },
+  dockerhub: { label: "Docker Hub", mono: "DH", hue: 205 },
+  stackoverflow: { label: "Stack Overflow", mono: "SO", hue: 28 },
+  codewars: { label: "Codewars", mono: "CW", hue: 0 },
+  chesscom: { label: "Chess.com", mono: "CH", hue: 95 },
+  lichess: { label: "Lichess", mono: "LI", hue: 0 },
+  orcid: { label: "ORCID", mono: "ID", hue: 85 },
+  wikidata: { label: "Wikidata", mono: "WD", hue: 210 },
+  email_intel: { label: "Email domain", mono: "@", hue: 190 },
+  ip_intel: { label: "IP intelligence", mono: "IP", hue: 160 },
+  security_txt: { label: "security.txt", mono: "ST", hue: 140 },
+  hn_search: { label: "Hacker News search", mono: "HN", hue: 28 },
+  web_search: { label: "Web search", mono: "WS", hue: 215 },
+  website: { label: "Website", mono: "WB", hue: 215 },
+  dns: { label: "DNS", mono: "NS", hue: 170 },
+  rdap: { label: "RDAP", mono: "RD", hue: 170 },
+  certificates: { label: "Certificates", mono: "CT", hue: 140 },
+  wayback: { label: "Wayback", mono: "AR", hue: 30 },
+  documents: { label: "Documents", mono: "PDF", hue: 0 },
 };
+
+export const MONITOR_OPTIONS: { hours: number | null; label: string }[] = [
+  { hours: null, label: "Off" },
+  { hours: 24, label: "Daily" },
+  { hours: 24 * 7, label: "Weekly" },
+  { hours: 24 * 30, label: "Monthly" },
+];

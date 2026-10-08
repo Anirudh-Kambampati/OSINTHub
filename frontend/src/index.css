@@ -27,8 +27,39 @@
   --st-rate-limited: #f09a4f;
   --st-auth: #a98bf5;
   --st-running: #7aa2ff;
+  --on-accent: #0b0d10;
+  --overlay: rgba(0, 0, 0, 0.5);
 
   color-scheme: dark;
+}
+
+/* Light theme: same semantics, contrast-checked darker hues on white surfaces. */
+:root[data-theme="light"] {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface-2: #f1f3f6;
+  --surface-3: #e7eaef;
+  --border: #e0e4ea;
+  --border-strong: #cdd3dc;
+  --text: #14171c;
+  --text-muted: #4e5763;
+  --text-subtle: #737c88;
+  --accent: #2f5fd0;
+  --accent-muted: #2f5fd01a;
+  --conf-very-high: #17855a;
+  --conf-high: #1c6fa8;
+  --conf-medium: #9a6a0e;
+  --conf-low: #687079;
+  --st-found: #17855a;
+  --st-not-found: #687079;
+  --st-not-verified: #9a6a0e;
+  --st-error: #c42f2f;
+  --st-rate-limited: #b45f17;
+  --st-auth: #6a4bcc;
+  --st-running: #2f5fd0;
+  --on-accent: #ffffff;
+  --overlay: rgba(15, 20, 30, 0.35);
+  color-scheme: light;
 }
 
 @theme inline {

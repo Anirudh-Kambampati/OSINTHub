@@ -8,6 +8,7 @@ import type { IdentityAttribute, ImageCandidate, Match, Mention, Observation, Pr
 import { ConfidenceBadge, PlatformMark, RunStatusBadge } from "../ui/indicators";
 import { ErrorNotice, ExternalLink, Pill, Skeleton } from "../ui/primitives";
 import { ProxiedAvatar } from "../ui/ProxiedAvatar";
+import { DecisionControls } from "./DecisionControls";
 import { SourceRow } from "./SourceRow";
 
 export function evidenceTitle(t: EvidenceTarget): { title: string; subtitle?: string } {
@@ -207,6 +208,11 @@ function EntityInspector({ entityId }: { entityId: string }) {
       {e.match && (
         <Section title="Why this is linked to the subject">
           <MatchFactors match={e.match} />
+        </Section>
+      )}
+      {e.kind === "profile" && (
+        <Section title="Analyst decision">
+          <DecisionControls profile={e} />
         </Section>
       )}
       {data.observations.length > 0 && (

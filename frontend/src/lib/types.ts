@@ -50,6 +50,8 @@ export interface Run {
 }
 
 export interface Stats {
+  new_entities: number;
+  new_mentions: number;
   profiles: number;
   matched_profiles: number;
   mentions: number;
@@ -66,6 +68,13 @@ export interface Stats {
 
 export interface Investigation {
   id: string;
+  owner_id: string | null;
+  owner_name: string | null;
+  tags: string[];
+  monitor_interval_hours: number | null;
+  next_run_at: string | null;
+  previous_completed_at: string | null;
+  run_count: number;
   seed: string;
   seed_type: SeedType;
   title: string;
@@ -89,11 +98,17 @@ export interface Factor {
   related_entity_id: string | null;
 }
 
+export type Decision = "confirmed" | "rejected";
+
 export interface Match {
   score: number;
   level: ConfidenceLevel;
   label: string;
   factors: Factor[];
+  /** Identity cluster; 0 is the cluster of the best-matching profile. */
+  cluster: number | null;
+  decision: Decision | null;
+  decision_note: string | null;
 }
 
 export interface Entity {
@@ -107,6 +122,8 @@ export interface Entity {
   data: Record<string, unknown> & { platform?: string; platform_label?: string; url?: string };
   match: Match | null;
   avatar_observation_id: string | null;
+  /** Created since the previous completed run. */
+  is_new: boolean;
 }
 
 export interface EntityRef {
@@ -267,4 +284,47 @@ export interface ConnectorInfo {
   description: string;
   configured: boolean;
   requires: string[];
+}
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  role: "admin" | "analyst";
+  is_active: boolean;
+  created_at: string;
+  last_login_at: string | null;
+}
+
+export interface AuthStatus {
+  user: User | null;
+  needs_setup: boolean;
+  allow_registration: boolean;
+}
+
+export interface Note {
+  id: string;
+  body: string;
+  author_id: string | null;
+  author_name: string | null;
+  created_at: string;
+}
+
+export interface AccessLogEntry {
+  id: number;
+  connector: string;
+  method: string;
+  url: string;
+  status_code: number | null;
+  error: string | null;
+  at: string;
+}
+
+export interface AuditEvent {
+  id: number;
+  user_id: string | null;
+  action: string;
+  target: string | null;
+  ip: string | null;
+  at: string;
 }

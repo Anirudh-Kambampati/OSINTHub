@@ -34,6 +34,7 @@ import {
 import { memo, useMemo, useState } from "react";
 import { useEvidence } from "../../context/evidence";
 import { CONFIDENCE_META, ENTITY_KIND_LABEL, PLATFORM_META } from "../../lib/meta";
+import { useResolvedTheme } from "../../lib/theme";
 import type { Graph, GraphNode } from "../../lib/types";
 import { ConfidenceBadge } from "../ui/indicators";
 import { Button, ExternalLink } from "../ui/primitives";
@@ -208,6 +209,7 @@ function NodeInspector({ graph, node, onClose }: { graph: Graph; node: GraphNode
 }
 
 export function GraphView({ graph }: { graph: Graph }) {
+  const theme = useResolvedTheme();
   const [selected, setSelected] = useState<string | null>(null);
   const [hidden, setHidden] = useState<Set<string>>(() => new Set(["certificate"]));
   const kinds = useMemo(() => {
@@ -267,11 +269,11 @@ export function GraphView({ graph }: { graph: Graph }) {
           fitViewOptions={{ padding: 0.15 }}
           minZoom={0.15}
           proOptions={{ hideAttribution: true }}
-          colorMode="dark"
+          colorMode={theme}
         >
           <Background gap={24} size={1} color="var(--border)" />
           <Controls showInteractive={false} />
-          <MiniMap pannable zoomable nodeColor={() => "var(--border-strong)"} maskColor="rgba(11,13,16,0.7)" />
+          <MiniMap pannable zoomable nodeColor={() => "var(--border-strong)"} maskColor="color-mix(in srgb, var(--bg) 70%, transparent)" />
         </ReactFlow>
         {selectedNode && <NodeInspector graph={graph} node={selectedNode} onClose={() => setSelected(null)} />}
       </div>

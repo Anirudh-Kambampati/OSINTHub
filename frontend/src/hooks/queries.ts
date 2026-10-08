@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { api } from "../lib/api";
-import type { InvestigationStatus, SeedType } from "../lib/types";
+import type { Decision, InvestigationStatus, SeedType, User } from "../lib/types";
 
 export const ACTIVE_STATUSES: InvestigationStatus[] = ["pending", "running"];
 export const isActive = (status: InvestigationStatus | undefined) => !!status && ACTIVE_STATUSES.includes(status);
@@ -16,12 +16,18 @@ export const keys = {
   sources: (id: string) => ["investigation", id, "sources"] as const,
   evidence: (entityId: string) => ["entity", entityId, "evidence"] as const,
   connectors: ["connectors"] as const,
+  auth: ["auth"] as const,
+  notes: (id: string) => ["investigation", id, "notes"] as const,
+  accessLog: (id: string) => ["investigation", id, "access-log"] as const,
+  users: ["users"] as const,
+  audit: ["audit"] as const,
 };
 
-export function useInvestigations() {
+export function useInvestigations(q = "") {
   return useQuery({
-    queryKey: keys.investigations,
-    queryFn: api.investigations,
+    queryKey: [...keys.investigations, q],
+    queryFn: () => api.investigations(q || undefined),
+    placeholderData: (prev) => prev,
     refetchInterval: (q) => (q.state.data?.some((i) => isActive(i.status)) ? 3000 : false),
   });
 }
@@ -127,4 +133,82 @@ export function useDeleteInvestigation() {
       qc.invalidateQueries({ queryKey: keys.investigations });
     },
   });
+}
+
+export function useAuthStatus() {
+  return useQuery({ queryKey: keys.auth, queryFn: api.authStatus, staleTime: 60_000, retry: false });
+}
+
+export function useNotes(id: string) {
+  return useQuery({ queryKey: keys.notes(id), queryFn: () => api.notes(id) });
+}
+
+export function useAddNote(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: string) => api.addNote(id, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.notes(id) }),
+  });
+}
+
+export function useDeleteNote(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (noteId: string) => api.deleteNote(id, noteId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.notes(id) }),
+  });
+}
+
+export function useAccessLog(id: string, enabled: boolean) {
+  return useQuery({ queryKey: keys.accessLog(id), queryFn: () => api.accessLog(id), enabled });
+}
+
+export function useUpdateInvestigation(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Parameters<typeof api.updateInvestigation>[1]) => api.updateInvestigation(id, body),
+    onSuccess: (inv) => {
+      qc.setQueryData(keys.investigation(id), inv);
+      qc.invalidateQueries({ queryKey: keys.investigations });
+    },
+  });
+}
+
+/** Analyst confirm/reject. Re-resolution changes scores everywhere, so refresh the whole investigation. */
+export function useDecision(investigationId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ entityId, decision, note }: { entityId: string; decision: Decision | null; note?: string }) =>
+      decision ? api.setDecision(entityId, decision, note) : api.clearDecision(entityId),
+    onSuccess: (evidence) => {
+      qc.setQueryData(keys.evidence(evidence.entity.id), evidence);
+      qc.invalidateQueries({ queryKey: ["entity"] });
+      if (investigationId) qc.invalidateQueries({ queryKey: ["investigation", investigationId] });
+    },
+  });
+}
+
+export function useUsers(enabled: boolean) {
+  return useQuery({ queryKey: keys.users, queryFn: api.users, enabled });
+}
+
+export function useCreateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.createUser,
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.users }),
+  });
+}
+
+export function useUpdateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string; role?: User["role"]; is_active?: boolean; password?: string }) =>
+      api.updateUser(id, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.users }),
+  });
+}
+
+export function useAudit(enabled: boolean) {
+  return useQuery({ queryKey: keys.audit, queryFn: api.audit, enabled });
 }

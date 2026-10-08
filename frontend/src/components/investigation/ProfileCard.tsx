@@ -4,6 +4,7 @@ import type { Entity } from "../../lib/types";
 import { ConfidenceBadge, ConfidenceBar, PlatformMark } from "../ui/indicators";
 import { Button, ExternalLink, Pill } from "../ui/primitives";
 import { ProxiedAvatar } from "../ui/ProxiedAvatar";
+import { DecisionControls } from "./DecisionControls";
 
 export function ProfileCard({ profile }: { profile: Entity }) {
   const { open } = useEvidence();
@@ -18,7 +19,12 @@ export function ProfileCard({ profile }: { profile: Entity }) {
           <PlatformMark platform={platform} size={22} />
           <span className="text-[13px] font-medium text-fg">{platform ? (PLATFORM_META[platform]?.label ?? platform) : "Profile"}</span>
         </div>
-        {conflicting && <Pill color="var(--st-error)">Conflicts</Pill>}
+        <div className="flex items-center gap-1.5">
+          {profile.is_new && <Pill color="var(--accent)">New</Pill>}
+          {match?.decision === "confirmed" && <Pill color="var(--st-found)">Confirmed</Pill>}
+          {match?.decision === "rejected" && <Pill color="var(--st-error)">Rejected</Pill>}
+          {!match?.decision && conflicting && <Pill color="var(--st-error)">Conflicts</Pill>}
+        </div>
       </header>
 
       <div className="mt-4 flex items-center gap-3">
@@ -61,12 +67,16 @@ export function ProfileCard({ profile }: { profile: Entity }) {
         <Button size="sm" variant="ghost" onClick={() => open({ type: "entity", id: profile.id })}>
           Evidence
         </Button>
+        <div className="ml-auto">
+          <DecisionControls profile={profile} compact />
+        </div>
       </footer>
     </article>
   );
 }
 
 export function ProfileGrid({ profiles }: { profiles: Entity[] }) {
+  if (profiles.length === 0) return null;
   return (
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
       {profiles.map((p) => (
