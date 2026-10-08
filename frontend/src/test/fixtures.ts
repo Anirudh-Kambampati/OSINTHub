@@ -1,0 +1,159 @@
+import type { Entity, IdentityAttribute, InvestigationDetail, ProfileView, Run, Source, Stats } from "../lib/types";
+
+export const source = (over: Partial<Source> = {}): Source => ({
+  id: "src-gh",
+  connector: "github",
+  name: "GitHub",
+  category: "code",
+  kind: "public_profile",
+  url: "https://api.github.com/users/anirudh123",
+  title: "GitHub public profile @anirudh123",
+  reliability: "high",
+  collected_at: "2026-10-07T18:00:00Z",
+  ...over,
+});
+
+export const stats = (over: Partial<Stats> = {}): Stats => ({
+  profiles: 2,
+  matched_profiles: 2,
+  mentions: 0,
+  sources: 2,
+  relationships: 5,
+  documents: 0,
+  domains: 0,
+  entities: 7,
+  connectors_run: 3,
+  connectors_total: 3,
+  confidence: 0.82,
+  level: "high",
+  ...over,
+});
+
+export const run = (over: Partial<Run> = {}): Run => ({
+  id: `run-${over.connector ?? "github"}`,
+  connector: "github",
+  label: "GitHub",
+  category: "code",
+  target: "anirudh123",
+  phase: 1,
+  status: "found",
+  message: null,
+  manual_url: null,
+  result_count: 6,
+  started_at: "2026-10-07T18:00:00Z",
+  finished_at: "2026-10-07T18:00:02Z",
+  ...over,
+});
+
+export const investigation = (over: Partial<InvestigationDetail> = {}): InvestigationDetail => ({
+  id: "inv-1",
+  seed: "anirudh123",
+  seed_type: "username",
+  title: "Anirudh K",
+  status: "completed",
+  error: null,
+  created_at: "2026-10-07T18:00:00Z",
+  updated_at: "2026-10-07T18:00:05Z",
+  started_at: "2026-10-07T18:00:00Z",
+  completed_at: "2026-10-07T18:00:05Z",
+  stats: stats(),
+  runs: [run(), run({ connector: "devto", label: "DEV", category: "social" })],
+  ...over,
+});
+
+export const profileEntity = (over: Partial<Entity> = {}): Entity => ({
+  id: "ent-gh",
+  kind: "profile",
+  key: "github:anirudh123",
+  label: "@anirudh123",
+  confidence: 0.95,
+  level: "very_high",
+  is_seed: false,
+  data: { platform: "github", platform_label: "GitHub", url: "https://github.com/anirudh123" },
+  match: {
+    score: 0.95,
+    level: "very_high",
+    label: "High-confidence match",
+    factors: [
+      { code: "seed_username_exact", label: "Exact username match (@anirudh123)", weight: 0.35, related_entity_id: null },
+      { code: "shared_email", label: "Same public email as DEV @anirudh123", weight: 0.4, related_entity_id: "ent-dev" },
+    ],
+  },
+  avatar_observation_id: null,
+  ...over,
+});
+
+export const emailAttribute: IdentityAttribute = {
+  attribute: "email",
+  value: "anirudh@example.com",
+  normalized_value: "anirudh@example.com",
+  confidence: 0.91,
+  level: "very_high",
+  first_observed: "2026-10-07T18:00:00Z",
+  last_observed: "2026-10-07T18:00:01Z",
+  source_count: 2,
+  evidence: [
+    {
+      observation_id: "obs-1",
+      value: "anirudh@example.com",
+      confidence: 0.9,
+      weight: 0.95,
+      observed_at: "2026-10-07T18:00:00Z",
+      source: source(),
+      entity: { id: "ent-gh", kind: "profile", label: "@anirudh123", platform: "github", confidence: 0.95 },
+    },
+    {
+      observation_id: "obs-2",
+      value: "anirudh@example.com",
+      confidence: 0.9,
+      weight: 0.8,
+      observed_at: "2026-10-07T18:00:01Z",
+      source: source({ id: "src-dev", connector: "devto", name: "DEV", url: "https://dev.to/api/users/by_username?url=anirudh123" }),
+      entity: { id: "ent-dev", kind: "profile", label: "@anirudh123", platform: "devto", confidence: 0.8 },
+    },
+  ],
+};
+
+export const profileView = (over: Partial<ProfileView> = {}): ProfileView => ({
+  subject: {
+    id: "ent-subject",
+    kind: "person",
+    key: "subject",
+    label: "Anirudh K",
+    confidence: 1,
+    level: "very_high",
+    is_seed: false,
+    data: { subject: true },
+    match: null,
+    avatar_observation_id: null,
+  },
+  seed_entity_id: "ent-seed",
+  confidence: 0.82,
+  level: "high",
+  images: [],
+  attributes: [emailAttribute],
+  presence: [
+    {
+      connector: "github",
+      label: "GitHub",
+      category: "code",
+      status: "found",
+      message: null,
+      manual_url: "https://github.com/anirudh123",
+      target: "anirudh123",
+      profile: profileEntity(),
+    },
+    {
+      connector: "instagram",
+      label: "Instagram",
+      category: "social",
+      status: "not_verified",
+      message: "Public source could not be legitimately queried.",
+      manual_url: "https://www.instagram.com/anirudh123/",
+      target: "anirudh123",
+      profile: null,
+    },
+  ],
+  profiles: [profileEntity()],
+  ...over,
+});

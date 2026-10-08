@@ -1,0 +1,22 @@
+# Optional PostgreSQL for development. SQLite is used by default.
+#   docker compose up -d db
+#   cd backend && uv sync --extra postgres
+#   OSINT_DATABASE_URL=postgresql+asyncpg://osint:osint@localhost:5432/osint uv run alembic upgrade head
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: osint
+      POSTGRES_PASSWORD: osint
+      POSTGRES_DB: osint
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U osint"]
+      interval: 3s
+      retries: 10
+
+volumes:
+  pgdata:
