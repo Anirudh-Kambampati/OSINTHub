@@ -2,7 +2,7 @@ async def _run(api, seed="anirudh123") -> dict:
     resp = await api.post("/api/investigations", json={"seed": seed})
     assert resp.status_code == 201, resp.text
     body = resp.json()
-    await api.app.state.runner.drain()
+    await api.app.state.worker.run_until_idle()
     return body
 
 
@@ -70,14 +70,3 @@ async def test_unknown_ids_are_404(api):
     assert (await api.get("/api/investigations/nope")).status_code == 404
     assert (await api.get("/api/entities/nope/evidence")).status_code == 404
     assert (await api.get("/api/observations/nope/image")).status_code == 404
-
-
-async def test_api_token_enforced(api, monkeypatch):
-    from pydantic import SecretStr
-
-    from app.config import get_settings
-
-    monkeypatch.setattr(get_settings(), "api_token", SecretStr("s3cret"))
-    assert (await api.get("/api/investigations")).status_code == 401
-    ok = await api.get("/api/investigations", headers={"Authorization": "Bearer s3cret"})
-    assert ok.status_code == 200

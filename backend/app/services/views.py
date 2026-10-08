@@ -1,6 +1,9 @@
 """Read models. Everything shown in the UI is computed here from stored observations."""
 
 from collections import defaultdict
+from dataclasses import dataclass
+from datetime import datetime
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,7 +11,8 @@ from app.connectors.registry import CONNECTORS
 from app.core.confidence import IDENTITY_THRESHOLD, level, noisy_or
 from app.core.enums import RELIABILITY_WEIGHT, EntityKind, Reliability, RunStatus, SourceCategory
 from app.models import (
-    ConnectorRun, Entity, EntityMatch, Investigation, Mention, Observation, Relationship, Source, TimelineEvent,
+    AnalystDecision, ConnectorRun, Entity, EntityMatch, Investigation, Mention, Observation, Relationship, Source,
+    TimelineEvent, User,
 )
 from app.schemas import (
     EntityEvidence, EntityOut, EntityRefOut, EvidenceItem, FactorOut, GraphEdge, GraphNode, GraphOut,
@@ -38,17 +42,20 @@ def ref_out(e: Entity) -> EntityRefOut:
                         confidence=e.confidence)
 
 
-def match_out(m: EntityMatch | None) -> MatchOut | None:
+def match_out(m: EntityMatch | None, decision: AnalystDecision | None = None) -> MatchOut | None:
     if m is None:
         return None
-    return MatchOut(score=m.score, level=level(m.score), label=m.label,
-                    factors=[FactorOut(**f) for f in m.factors or []])
+    return MatchOut(score=m.score, level=level(m.score), label=m.label, cluster=m.cluster,
+                    factors=[FactorOut(**f) for f in m.factors or []],
+                    decision=decision.decision if decision else None, decision_note=decision.note if decision else None)
 
 
-def entity_out(e: Entity, match: EntityMatch | None = None, avatar_id: str | None = None) -> EntityOut:
+def entity_out(e: Entity, match: EntityMatch | None = None, avatar_id: str | None = None,
+               decision: AnalystDecision | None = None, new_since: datetime | None = None) -> EntityOut:
     return EntityOut(id=e.id, kind=e.kind, key=e.key, label=e.label, confidence=e.confidence,
-                     level=level(e.confidence), is_seed=e.is_seed, data=e.data or {}, match=match_out(match),
-                     avatar_observation_id=avatar_id)
+                     level=level(e.confidence), is_seed=e.is_seed, data=e.data or {},
+                     match=match_out(match, decision), avatar_observation_id=avatar_id,
+                     is_new=bool(new_since and e.created_at > new_since))
 
 
 def run_out(r: ConnectorRun) -> RunOut:
@@ -82,7 +89,12 @@ async def investigation_stats(s: AsyncSession, inv: Investigation, runs: list[Co
     current = latest_runs(runs)
     matched = [m for m in matches if m >= IDENTITY_THRESHOLD]
     confidence = await _overall_confidence(s, inv, matched)
+    since = inv.previous_completed_at
+    new_entities = await _count(s, Entity, Entity.investigation_id == iid, Entity.created_at > since) if since else 0
+    new_mentions = await _count(s, Mention, Mention.investigation_id == iid, Mention.observed_at > since) if since else 0
     return Stats(
+        new_entities=new_entities,
+        new_mentions=new_mentions,
         profiles=kinds.get(EntityKind.PROFILE.value, 0),
         matched_profiles=len(matched),
         mentions=await _count(s, Mention, Mention.investigation_id == iid),
@@ -113,7 +125,11 @@ async def _overall_confidence(s: AsyncSession, inv: Investigation, matched: list
 
 async def investigation_out(s: AsyncSession, inv: Investigation, *, with_runs: bool) -> InvestigationOut:
     runs = (await s.scalars(select(ConnectorRun).where(ConnectorRun.investigation_id == inv.id))).all()
+    owner = await s.get(User, inv.owner_id) if inv.owner_id else None
     base = dict(
+        owner_id=inv.owner_id, owner_name=owner.name if owner else None, tags=inv.tags or [],
+        monitor_interval_hours=inv.monitor_interval_hours, next_run_at=inv.next_run_at,
+        previous_completed_at=inv.previous_completed_at, run_count=inv.run_count or 0,
         id=inv.id, seed=inv.seed, seed_type=inv.seed_type, title=inv.title, status=inv.status, error=inv.error,
         created_at=inv.created_at, updated_at=inv.updated_at, started_at=inv.started_at,
         completed_at=inv.completed_at, stats=await investigation_stats(s, inv, list(runs)),
@@ -123,10 +139,25 @@ async def investigation_out(s: AsyncSession, inv: Investigation, *, with_runs: b
     return InvestigationOut(**base)
 
 
-async def _entity_context(s: AsyncSession, investigation_id: str):
+@dataclass
+class EntityContext:
+    entities: dict[str, Entity]
+    matches: dict[str, EntityMatch]
+    avatars: dict[str, str]
+    decisions: dict[str, AnalystDecision]
+    new_since: datetime | None
+
+    def out(self, e: Entity) -> EntityOut:
+        return entity_out(e, self.matches.get(e.id), self.avatars.get(e.id), self.decisions.get(e.id), self.new_since)
+
+
+async def _entity_context(s: AsyncSession, investigation_id: str) -> EntityContext:
+    inv = await s.get(Investigation, investigation_id)
     entities = {e.id: e for e in (await s.scalars(select(Entity).where(Entity.investigation_id == investigation_id))).all()}
     matches = {m.entity_id: m for m in (await s.scalars(
         select(EntityMatch).where(EntityMatch.investigation_id == investigation_id))).all()}
+    decisions = {d.entity_id: d for d in (await s.scalars(
+        select(AnalystDecision).where(AnalystDecision.investigation_id == investigation_id))).all()}
     avatars: dict[str, str] = {}
     for obs_id, entity_id in (await s.execute(
         select(Observation.id, Observation.entity_id).where(
@@ -134,7 +165,7 @@ async def _entity_context(s: AsyncSession, investigation_id: str):
         .order_by(Observation.observed_at.desc())
     )).all():
         avatars.setdefault(entity_id, obs_id)
-    return entities, matches, avatars
+    return EntityContext(entities, matches, avatars, decisions, inv.previous_completed_at if inv else None)
 
 
 def _entity_weight(e: Entity) -> float:
@@ -144,7 +175,8 @@ def _entity_weight(e: Entity) -> float:
 
 
 async def build_profile(s: AsyncSession, inv: Investigation) -> ProfileView:
-    entities, matches, avatars = await _entity_context(s, inv.id)
+    ctx = await _entity_context(s, inv.id)
+    entities, matches = ctx.entities, ctx.matches
     subject = next((e for e in entities.values() if (e.data or {}).get("subject")), None)
     seed_entity = next((e for e in entities.values() if e.is_seed), None)
     subject = subject or seed_entity
@@ -206,7 +238,7 @@ async def build_profile(s: AsyncSession, inv: Investigation) -> ProfileView:
         (e for e in entities.values() if e.kind == EntityKind.PROFILE.value),
         key=lambda e: -(matches[e.id].score if e.id in matches else 0),
     )
-    profile_outs = [entity_out(e, matches.get(e.id), avatars.get(e.id)) for e in profiles]
+    profile_outs = [ctx.out(e) for e in profiles]
 
     runs = latest_runs(list((await s.scalars(
         select(ConnectorRun).where(ConnectorRun.investigation_id == inv.id, ConnectorRun.phase == 1))).all()))
@@ -231,8 +263,8 @@ async def build_profile(s: AsyncSession, inv: Investigation) -> ProfileView:
 
 
 async def list_entities(s: AsyncSession, investigation_id: str, kind: str | None) -> list[EntityOut]:
-    entities, matches, avatars = await _entity_context(s, investigation_id)
-    out = [entity_out(e, matches.get(e.id), avatars.get(e.id)) for e in entities.values() if not kind or e.kind == kind]
+    ctx = await _entity_context(s, investigation_id)
+    out = [ctx.out(e) for e in ctx.entities.values() if not kind or e.kind == kind]
     return sorted(out, key=lambda e: (-(e.match.score if e.match else e.confidence), e.label))
 
 
@@ -283,13 +315,15 @@ async def timeline(s: AsyncSession, investigation_id: str, kind: str | None) -> 
 
 
 async def build_graph(s: AsyncSession, investigation_id: str, include_mentions: bool) -> GraphOut:
-    entities, matches, avatars = await _entity_context(s, investigation_id)
+    ctx = await _entity_context(s, investigation_id)
+    entities, matches, avatars = ctx.entities, ctx.matches, ctx.avatars
     ranked = sorted(entities.values(), key=lambda e: (not (e.is_seed or (e.data or {}).get("subject")), -e.confidence))
     kept = {e.id: e for e in ranked[:GRAPH_NODE_LIMIT]}
     nodes = [
         GraphNode(id=e.id, kind=e.kind, label=e.label, confidence=e.confidence, level=level(e.confidence),
                   is_seed=e.is_seed, is_subject=bool((e.data or {}).get("subject")),
                   data={**(e.data or {}), "match_label": matches[e.id].label if e.id in matches else None,
+                        "cluster": matches[e.id].cluster if e.id in matches else None,
                         "avatar_observation_id": avatars.get(e.id)})
         for e in kept.values()
     ]
@@ -320,6 +354,7 @@ async def build_graph(s: AsyncSession, investigation_id: str, include_mentions: 
 
 async def entity_evidence(s: AsyncSession, entity: Entity) -> EntityEvidence:
     match = await s.scalar(select(EntityMatch).where(EntityMatch.entity_id == entity.id))
+    decision = await s.scalar(select(AnalystDecision).where(AnalystDecision.entity_id == entity.id))
     avatar = await s.scalar(select(Observation.id).where(Observation.entity_id == entity.id,
                                                          Observation.attribute == "avatar").limit(1))
     obs_rows = (await s.execute(
@@ -345,7 +380,7 @@ async def entity_evidence(s: AsyncSession, entity: Entity) -> EntityEvidence:
         ))
     relationships.sort(key=lambda r: -r.confidence)
     return EntityEvidence(
-        entity=entity_out(entity, match, avatar),
+        entity=entity_out(entity, match, avatar, decision),
         observations=[ObservationOut(id=o.id, attribute=o.attribute, value=o.value, confidence=o.confidence,
                                      observed_at=o.observed_at, source=source_out(src)) for o, src in obs_rows],
         relationships=relationships,

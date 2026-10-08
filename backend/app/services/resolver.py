@@ -44,6 +44,8 @@ WEIGHTS: dict[str, float] = {
 }
 MAX_CORROBORATION = 0.60
 SELF_SITE_CODES = {"mutual_link", "shared_email"}
+# Evidence strong enough to say two accounts are the same entity regardless of the seed.
+CLUSTER_CODES = {"mutual_link", "verified_link", "profile_link", "shared_email", "shared_website"}
 
 _SEP = re.compile(r"[._\-]")
 
@@ -93,6 +95,7 @@ class MatchResult:
     score: float
     label: str
     factors: list[Factor]
+    cluster: int | None = None
 
     @property
     def conflicting(self) -> bool:
@@ -178,11 +181,21 @@ def pair_factors(a: Candidate, b: Candidate) -> list[Factor]:
     return out
 
 
-def resolve(candidates: list[Candidate], seed_type: SeedType, seed: str) -> dict[str, MatchResult]:
-    """Score every profile candidate. Websites act only as corroborating evidence."""
+def resolve(
+    candidates: list[Candidate], seed_type: SeedType, seed: str, decisions: dict[str, str] | None = None,
+) -> dict[str, MatchResult]:
+    """Score every profile candidate. Websites act only as corroborating evidence.
+
+    `decisions` maps entity_id -> "confirmed" | "rejected" (analyst verdicts). A confirmed profile
+    is anchored like a seed match and corroborates others; a rejected one is excluded entirely.
+    """
+    decisions = decisions or {}
+    rejected = {eid for eid, d in decisions.items() if d == "rejected"}
+    confirmed = {eid for eid, d in decisions.items() if d == "confirmed"}
     seeds = {c.entity_id: seed_factors(c, seed_type, seed) for c in candidates}
-    # A candidate is "anchored" if it relates to the seed directly, or (websites) is claimed by an anchored profile.
-    anchored = {cid for cid, fs in seeds.items() if fs}
+    # A candidate is "anchored" if it relates to the seed directly, an analyst confirmed it, or
+    # (websites) it is claimed by an anchored profile.
+    anchored = {cid for cid, fs in seeds.items() if fs or cid in confirmed} - rejected
     site_anchors: dict[str, set[str]] = {}
     for c in candidates:
         if c.is_profile:
@@ -197,6 +210,10 @@ def resolve(candidates: list[Candidate], seed_type: SeedType, seed: str) -> dict
     for c in candidates:
         if not c.is_profile:
             continue
+        if c.entity_id in rejected:
+            results[c.entity_id] = MatchResult(0.0, "Analyst rejected", [
+                Factor("analyst_rejected", "An analyst marked this profile as a different entity", -1.0)])
+            continue
         best: dict[str, Factor] = {}
         penalties: list[Factor] = []
         for other in candidates:
@@ -204,8 +221,7 @@ def resolve(candidates: list[Candidate], seed_type: SeedType, seed: str) -> dict
                 continue
             # A website reached only through c's own link is not independent of c: only a
             # link back to c, or the site separately publishing the same email, corroborates.
-            self_anchored = not other.is_profile and not seeds[other.entity_id] \
-                and site_anchors[other.entity_id] <= {c.entity_id}
+            self_anchored = not other.is_profile and not seeds[other.entity_id]                 and site_anchors[other.entity_id] <= {c.entity_id}
             for factor in pair_factors(c, other):
                 if self_anchored and factor.code not in SELF_SITE_CODES:
                     continue
@@ -217,7 +233,47 @@ def resolve(candidates: list[Candidate], seed_type: SeedType, seed: str) -> dict
         corr_total = min(MAX_CORROBORATION, sum(f.weight for f in corroboration))
         penalty = penalties[:1]  # one contradiction is meaningful; repeats of the same name are not new evidence
         base = sum(f.weight for f in seeds[c.entity_id])
+        if c.entity_id in confirmed:
+            factors = [Factor("analyst_confirmed", "An analyst confirmed this profile belongs to the subject",
+                              MAX_INFERRED), *seeds[c.entity_id], *corroboration]
+            results[c.entity_id] = MatchResult(MAX_INFERRED, "Analyst confirmed", factors)
+            continue
         score = max(0.0, min(MAX_INFERRED, base + corr_total + sum(f.weight for f in penalty)))
         factors = [*seeds[c.entity_id], *corroboration, *penalty]
         results[c.entity_id] = MatchResult(round(score, 4), match_label(score, bool(penalty)), factors)
+
+    for entity_id, cluster in cluster_candidates(candidates, results, rejected).items():
+        results[entity_id].cluster = cluster
     return results
+
+
+def cluster_candidates(
+    candidates: list[Candidate], results: dict[str, MatchResult], rejected: set[str],
+) -> dict[str, int]:
+    """Group profiles that strong pairwise evidence ties together (union-find).
+
+    Unlike scoring, clustering ignores the seed: it answers "which of these accounts are the same
+    entity as each other?". Cluster 0 is the one containing the best-matching profile, so several
+    people sharing one handle show up as separate identities instead of one blended profile.
+    """
+    parent = {c.entity_id: c.entity_id for c in candidates if c.entity_id not in rejected}
+
+    def find(x: str) -> str:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    live = [c for c in candidates if c.entity_id in parent]
+    for i, a in enumerate(live):
+        for b in live[i + 1:]:
+            codes = {f.code for f in pair_factors(a, b)}
+            if codes & CLUSTER_CODES and "name_conflict" not in codes:
+                parent[find(a.entity_id)] = find(b.entity_id)
+
+    groups: dict[str, list[str]] = {}
+    for c in live:
+        if c.is_profile:
+            groups.setdefault(find(c.entity_id), []).append(c.entity_id)
+    ranked = sorted(groups.values(), key=lambda g: (-max(results[e].score for e in g), -len(g)))
+    return {eid: idx for idx, group in enumerate(ranked) for eid in group}

@@ -6,12 +6,16 @@ import httpx
 import pytest
 
 from app import db
+from app.api.deps import login_limiter
 from app.config import get_settings
 from app.connectors._profile import PublicProfile, emit_profile
 from app.connectors.base import Connector, ConnectorContext, ConnectorError, ConnectorResult, Findings
 from app.connectors.registry import CONNECTORS
 from app.core.enums import Reliability, RunStatus, SeedType, SourceCategory
-from app.services.orchestrator import JobRunner, Orchestrator
+from app.core.net import HostLimiter
+from app.main import create_app
+from app.services.orchestrator import Orchestrator
+from app.services.worker import Worker
 
 
 class FakeProfileConnector(Connector):
@@ -88,18 +92,33 @@ async def orchestrator(database, connectors):
         yield Orchestrator(database, client, get_settings(), connectors)
 
 
-@pytest.fixture
-async def api(database, connectors):
-    from app.main import create_app
+ADMIN = {"email": "admin@example.com", "name": "Admin", "password": "correct-horse-battery-1"}
 
+
+@pytest.fixture
+async def anon_api(database, connectors):
+    """Unauthenticated client; the worker is driven explicitly with `worker.run_until_idle()`."""
     app = create_app()
     async with httpx.AsyncClient() as outbound:
         app.state.http = outbound
-        from app.core.net import HostLimiter
-
         app.state.limiter = HostLimiter()
-        app.state.runner = JobRunner(Orchestrator(database, outbound, get_settings(), connectors), 2)
+        app.state.worker = Worker(Orchestrator(database, outbound, get_settings(), connectors), database,
+                                  get_settings(), worker_id="test-worker")
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async with httpx.AsyncClient(transport=transport, base_url="http://test",
+                                     headers={"X-OSINT-CSRF": "1"}) as client:
             client.app = app  # type: ignore[attr-defined]
             yield client
+
+
+@pytest.fixture
+async def api(anon_api):
+    """Client signed in as the bootstrap admin."""
+    resp = await anon_api.post("/api/auth/register", json=ADMIN)
+    assert resp.status_code == 201, resp.text
+    return anon_api
+
+
+@pytest.fixture(autouse=True)
+def _reset_login_limiter():
+    login_limiter._hits.clear()

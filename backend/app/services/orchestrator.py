@@ -4,14 +4,13 @@
              -> phase 3 (document pivots) -> resolve entities -> score -> final status
 
 Each connector run is isolated: a failure is recorded on its ConnectorRun and the
-investigation continues. Runs execute as in-process asyncio tasks behind `JobRunner`;
-swap that class for a real queue (arq/Celery) without touching the pipeline.
+investigation continues. Scheduling, claiming and recovery live in `worker.py`.
 """
 
 import asyncio
 import logging
 from collections.abc import Mapping
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 from sqlalchemy import select, update
@@ -61,9 +60,13 @@ class Orchestrator:
         try:
             async with self.sessions() as s:
                 inv = await s.get(Investigation, investigation_id)
+                if inv.completed_at:
+                    inv.previous_completed_at = inv.completed_at
                 inv.status = InvestigationStatus.RUNNING.value
                 inv.started_at = datetime.now(UTC)
+                inv.completed_at = None
                 inv.error = None
+                inv.run_count = (inv.run_count or 0) + 1
                 await ensure_subject(s, inv)
                 seed = Classification(SeedType(inv.seed_type), inv.seed_normalized)
                 pending = (await s.scalars(select(ConnectorRun).where(
@@ -72,26 +75,33 @@ class Orchestrator:
                 ))).all()
                 await s.commit()
 
-            phase1 = [(r.id, r.connector, r.target, seed.type) for r in pending]
+            # Requeued work can include pivot runs from an interrupted execution; those target URLs.
+            phase1 = [(r.id, r.connector, r.target, seed.type if r.phase == 1 else SeedType.URL) for r in pending]
+            executed = [r[0] for r in phase1]
             pivots = await self._run_phase(investigation_id, phase1, write_lock)
 
             done_targets = {normalize_url(t) for _, _, t, _ in phase1 if "." in t}
             websites = self._select_pivots(pivots, "website", self.settings.max_pivot_websites, done_targets)
             phase2 = await self._create_runs(investigation_id, websites, "website", 2)
+            executed += [r[0] for r in phase2]
             pivots = await self._run_phase(investigation_id, phase2, write_lock)
 
             documents = self._select_pivots(pivots, "document", self.settings.max_documents, set())
             phase3 = await self._create_runs(investigation_id, documents, "document", 3)
+            executed += [r[0] for r in phase3]
             await self._run_phase(investigation_id, phase3, write_lock)
 
             async with self.sessions() as s:
                 inv = await s.get(Investigation, investigation_id)
                 await run_resolution(s, inv)
                 statuses = set((await s.scalars(select(ConnectorRun.status).where(
-                    ConnectorRun.investigation_id == investigation_id))).all())
+                    ConnectorRun.id.in_(executed)))).all()) if executed else set()
                 degraded = any(RunStatus(st) in DEGRADED_RUN_STATUSES for st in statuses)
                 inv.status = (InvestigationStatus.PARTIAL if degraded else InvestigationStatus.COMPLETED).value
                 inv.completed_at = datetime.now(UTC)
+                inv.worker_id = None
+                if inv.monitor_interval_hours:
+                    inv.next_run_at = inv.completed_at + timedelta(hours=inv.monitor_interval_hours)
                 await s.commit()
         except Exception as exc:  # the pipeline itself failed (not a connector)
             log.exception("investigation %s failed", investigation_id)
@@ -102,6 +112,7 @@ class Orchestrator:
                 ).values(status=RunStatus.ERROR.value, message="Investigation pipeline aborted."))
                 inv = await s.get(Investigation, investigation_id)
                 if inv:
+                    inv.worker_id = None
                     inv.status = InvestigationStatus.FAILED.value
                     inv.error = f"{type(exc).__name__}: {exc}"[:1000]
                     inv.completed_at = datetime.now(UTC)
@@ -198,50 +209,3 @@ class Orchestrator:
                                 url=rec.url, status_code=rec.status_code, error=rec.error, at=rec.at))
             await s.commit()
         return result.pivots if result else []
-
-
-class JobRunner:
-    """Bounded in-process background execution. Keeps strong refs so tasks aren't GC'd."""
-
-    def __init__(self, orchestrator: Orchestrator, max_concurrent: int) -> None:
-        self.orchestrator = orchestrator
-        self._sem = asyncio.Semaphore(max_concurrent)
-        self._tasks: set[asyncio.Task] = set()
-        self._active: set[str] = set()
-
-    def is_active(self, investigation_id: str) -> bool:
-        return investigation_id in self._active
-
-    def submit(self, investigation_id: str) -> None:
-        self._active.add(investigation_id)
-        task = asyncio.create_task(self._guarded(investigation_id))
-        self._tasks.add(task)
-        task.add_done_callback(self._tasks.discard)
-
-    async def _guarded(self, investigation_id: str) -> None:
-        try:
-            async with self._sem:
-                await self.orchestrator.execute(investigation_id)
-        finally:
-            self._active.discard(investigation_id)
-
-    async def drain(self) -> None:
-        if self._tasks:
-            await asyncio.gather(*self._tasks, return_exceptions=True)
-
-    async def shutdown(self) -> None:
-        for t in self._tasks:
-            t.cancel()
-        await self.drain()
-
-
-async def recover_interrupted(sessions: async_sessionmaker[AsyncSession]) -> None:
-    """On startup, investigations left running by a previous process are marked partial."""
-    async with sessions() as s:
-        await s.execute(update(ConnectorRun).where(
-            ConnectorRun.status.in_([RunStatus.PENDING.value, RunStatus.RUNNING.value])
-        ).values(status=RunStatus.ERROR.value, message="Interrupted by a server restart."))
-        await s.execute(update(Investigation).where(
-            Investigation.status.in_([InvestigationStatus.PENDING.value, InvestigationStatus.RUNNING.value])
-        ).values(status=InvestigationStatus.PARTIAL.value, error="Interrupted by a server restart."))
-        await s.commit()

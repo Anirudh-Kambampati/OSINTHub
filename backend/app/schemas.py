@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -55,6 +55,9 @@ class RunOut(_Out):
 
 
 class Stats(BaseModel):
+    # Created since the previous completed run (monitoring "what changed").
+    new_entities: int = 0
+    new_mentions: int = 0
     profiles: int
     matched_profiles: int
     mentions: int
@@ -71,6 +74,13 @@ class Stats(BaseModel):
 
 class InvestigationOut(_Out):
     id: str
+    owner_id: str | None = None
+    owner_name: str | None = None
+    tags: list[str] = []
+    monitor_interval_hours: int | None = None
+    next_run_at: datetime | None = None
+    previous_completed_at: datetime | None = None
+    run_count: int = 0
     seed: str
     seed_type: SeedType
     title: str
@@ -99,6 +109,9 @@ class MatchOut(BaseModel):
     level: str
     label: str
     factors: list[FactorOut]
+    cluster: int | None = None
+    decision: str | None = None
+    decision_note: str | None = None
 
 
 class EntityOut(BaseModel):
@@ -112,6 +125,7 @@ class EntityOut(BaseModel):
     data: dict[str, Any]
     match: MatchOut | None = None
     avatar_observation_id: str | None = None
+    is_new: bool = False
 
 
 class EntityRefOut(BaseModel):
@@ -271,3 +285,37 @@ class ConnectorInfo(BaseModel):
     description: str
     configured: bool
     requires: list[str]
+
+
+class InvestigationUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=256)
+    tags: list[str] | None = Field(default=None, max_length=20)
+    # Explicit null disables monitoring; omit the field to leave it unchanged.
+    monitor_interval_hours: int | None = Field(default=None, ge=1, le=24 * 90)
+
+
+class DecisionIn(BaseModel):
+    decision: Literal["confirmed", "rejected"]
+    note: str | None = Field(default=None, max_length=1000)
+
+
+class NoteIn(BaseModel):
+    body: str = Field(min_length=1, max_length=10_000)
+
+
+class NoteOut(_Out):
+    id: str
+    body: str
+    author_id: str | None
+    author_name: str | None = None
+    created_at: datetime
+
+
+class AccessLogOut(_Out):
+    id: int
+    connector: str
+    method: str
+    url: str
+    status_code: int | None
+    error: str | None
+    at: datetime

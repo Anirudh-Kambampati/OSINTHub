@@ -10,7 +10,7 @@ from app.core.classify import Classification
 from app.core.confidence import IDENTITY_THRESHOLD
 from app.core.enums import EntityKind, RelType, SeedType
 from app.core.normalize import normalize_url, normalize_username
-from app.models import Entity, EntityMatch, Investigation, Observation, Relationship
+from app.models import AnalystDecision, Entity, EntityMatch, Investigation, Observation, Relationship
 from app.services.resolver import Candidate, resolve
 from app.services.store import upsert_entity, upsert_relationship
 
@@ -96,12 +96,15 @@ async def run_resolution(session: AsyncSession, inv: Investigation) -> None:
     for c in candidates.values():
         c.label = c.label.strip()
 
-    results = resolve(list(candidates.values()), seed.type, seed.normalized)
+    decisions = dict((await session.execute(
+        select(AnalystDecision.entity_id, AnalystDecision.decision).where(AnalystDecision.investigation_id == inv.id)
+    )).all())
+    results = resolve(list(candidates.values()), seed.type, seed.normalized, decisions)
 
     await session.execute(delete(EntityMatch).where(EntityMatch.investigation_id == inv.id))
     for entity_id, result in results.items():
-        session.add(EntityMatch(investigation_id=inv.id, entity_id=entity_id, score=result.score,
-                                label=result.label, factors=[f.as_dict() for f in result.factors]))
+        session.add(EntityMatch(investigation_id=inv.id, entity_id=entity_id, score=result.score, label=result.label,
+                                factors=[f.as_dict() for f in result.factors], cluster=result.cluster))
         by_id[entity_id].confidence = result.score
 
     # Cross-links observed on profiles/websites become LINKS_TO edges when the target was found.

@@ -41,10 +41,36 @@ class TZDateTime(TypeDecorator):
         return value
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    email: Mapped[str] = mapped_column(String(320), unique=True)
+    name: Mapped[str] = mapped_column(String(128))
+    password_hash: Mapped[str] = mapped_column(String(256))
+    role: Mapped[str] = mapped_column(String(16), default="analyst")  # "admin" | "analyst"
+    is_active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(TZDateTime(), default=utcnow)
+    last_login_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
+
+
+class AuthSession(Base):
+    """Server-side session. Only a SHA-256 of the cookie token is stored."""
+
+    __tablename__ = "auth_sessions"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(TZDateTime(), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(TZDateTime(), index=True)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
 class Investigation(Base):
     __tablename__ = "investigations"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    owner_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     seed: Mapped[str] = mapped_column(String(512))
     seed_normalized: Mapped[str] = mapped_column(String(512), index=True)
     seed_type: Mapped[str] = mapped_column(String(16))
@@ -55,6 +81,16 @@ class Investigation(Base):
     updated_at: Mapped[datetime] = mapped_column(TZDateTime(), default=utcnow, onupdate=utcnow)
     started_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
+    # Completion time of the run before the latest one: anything created after it is "new".
+    previous_completed_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
+    tags: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # Job queue: a worker claims a pending investigation and heartbeats while running.
+    worker_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
+    run_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Monitoring: re-run automatically every N hours when set.
+    monitor_interval_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    next_run_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True, index=True)
 
     runs: Mapped[list["ConnectorRun"]] = relationship(
         back_populates="investigation", cascade="all, delete-orphan", order_by="ConnectorRun.created_at"
@@ -161,6 +197,8 @@ class EntityMatch(Base):
     score: Mapped[float] = mapped_column(Float)
     label: Mapped[str] = mapped_column(String(32))
     factors: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    # Profiles connected by strong mutual evidence share a cluster; 0 is the subject's cluster.
+    cluster: Mapped[int | None] = mapped_column(Integer, nullable=True)
     computed_at: Mapped[datetime] = mapped_column(TZDateTime(), default=utcnow)
 
 
@@ -212,3 +250,41 @@ class AccessLog(Base):
     status_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error: Mapped[str | None] = mapped_column(String(512), nullable=True)
     at: Mapped[datetime] = mapped_column(TZDateTime(), default=utcnow)
+
+
+class AnalystDecision(Base):
+    """A human verdict on whether a profile belongs to the subject. Overrides the resolver."""
+
+    __tablename__ = "analyst_decisions"
+    __table_args__ = (UniqueConstraint("entity_id", name="uq_decision_entity"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    investigation_id: Mapped[str] = mapped_column(ForeignKey("investigations.id", ondelete="CASCADE"), index=True)
+    entity_id: Mapped[str] = mapped_column(ForeignKey("entities.id", ondelete="CASCADE"))
+    decision: Mapped[str] = mapped_column(String(16))  # "confirmed" | "rejected"
+    note: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TZDateTime(), default=utcnow)
+
+
+class InvestigationNote(Base):
+    __tablename__ = "investigation_notes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    investigation_id: Mapped[str] = mapped_column(ForeignKey("investigations.id", ondelete="CASCADE"), index=True)
+    author_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(TZDateTime(), default=utcnow)
+
+
+class AuditEvent(Base):
+    """Who did what in the console (logins, investigations created/deleted, decisions)."""
+
+    __tablename__ = "audit_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    action: Mapped[str] = mapped_column(String(64))
+    target: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    at: Mapped[datetime] = mapped_column(TZDateTime(), default=utcnow, index=True)
