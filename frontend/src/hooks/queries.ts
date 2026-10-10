@@ -147,6 +147,9 @@ export function useAddNote(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: string) => api.addNote(id, body),
+    // NotesPanel renders an inline ErrorNotice next to the form, so skip the toast — one
+    // failure shouldn't be reported twice.
+    meta: { inlineError: true },
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.notes(id) }),
   });
 }
@@ -155,6 +158,7 @@ export function useDeleteNote(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (noteId: string) => api.deleteNote(id, noteId),
+    meta: { inlineError: true },
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.notes(id) }),
   });
 }

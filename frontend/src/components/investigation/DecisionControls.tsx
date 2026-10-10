@@ -3,13 +3,32 @@ import { CircleCheck, CircleX, Undo2 } from "lucide-react";
 import { useState } from "react";
 import { useParams } from "react-router";
 import { useDecision } from "../../hooks/queries";
+import { useFeedback } from "../../context/FeedbackContext";
 import type { Entity } from "../../lib/types";
 import { ErrorNotice } from "../ui/primitives";
+
+type DecisionValue = "confirmed" | "rejected" | null;
+const DECISION_COPY: Record<string, string> = {
+  confirmed: "Profile confirmed.",
+  rejected: "Profile rejected.",
+  cleared: "Decision cleared.",
+};
+
+/** useDecision plus a success toast naming the verdict that was applied. */
+function useDecisionWithFeedback(investigationId: string | undefined) {
+  const decide = useDecision(investigationId);
+  const { notify } = useFeedback();
+  const mutate = (vars: { entityId: string; decision: DecisionValue; note?: string }) =>
+    decide.mutate(vars, {
+      onSuccess: () => notify("success", vars.decision ? DECISION_COPY[vars.decision] : DECISION_COPY.cleared),
+    });
+  return { ...decide, mutate };
+}
 
 /** Analyst verdict on a discovered profile. It overrides the resolver and re-scores the investigation. */
 export function DecisionControls({ profile, compact }: { profile: Entity; compact?: boolean }) {
   const { id: investigationId } = useParams();
-  const decide = useDecision(investigationId);
+  const decide = useDecisionWithFeedback(investigationId);
   const [note, setNote] = useState("");
   const current = profile.match?.decision ?? null;
 

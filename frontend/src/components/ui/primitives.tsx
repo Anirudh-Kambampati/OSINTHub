@@ -2,6 +2,7 @@ import clsx from "clsx";
 import { ExternalLink as ExternalIcon } from "lucide-react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { safeHref } from "../../lib/format";
+import { mapApiError } from "../../lib/feedback";
 
 export function Card({
   title,
@@ -174,8 +175,14 @@ export function SegmentedControl<T extends string>({
   );
 }
 
+/**
+ * Inline failure message. Maps the failure through the same copy the toast layer uses, so an
+ * inline error reads as "The server had a problem…" rather than the raw transport text. The
+ * raw message is the last resort for anything the mapper doesn't recognise.
+ */
 export function ErrorNotice({ error }: { error: unknown }) {
-  const message = error instanceof Error ? error.message : "Something went wrong.";
+  const fallback = error instanceof Error && error.message ? error.message : "Something went wrong.";
+  const message = mapApiError(error, fallback);
   return (
     <div
       role="alert"

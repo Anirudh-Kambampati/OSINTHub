@@ -4,6 +4,7 @@ import { AppShell } from "./components/layout/AppShell";
 import { EmptyState } from "./components/ui/primitives";
 import { RequireAuth, UnauthorizedRedirect } from "./context/auth";
 import { EvidenceProvider } from "./context/evidence";
+import { createFeedbackMutationCache, feedbackDispatcher, FeedbackProvider } from "./context/FeedbackContext";
 import { ApiError } from "./lib/api";
 import { HomePage } from "./pages/HomePage";
 import { InvestigationLayout } from "./pages/InvestigationLayout";
@@ -16,6 +17,11 @@ import { SourcesTab } from "./pages/tabs/SourcesTab";
 
 export function createQueryClient() {
   return new QueryClient({
+    // Every mutation failure surfaces (toast or inline), including ones a component forgot to
+    // handle. Settled before the per-mutation onError.
+    mutationCache: createFeedbackMutationCache((error, fallback) =>
+      feedbackDispatcher.notifyError?.(error, fallback),
+    ),
     defaultOptions: {
       queries: {
         staleTime: 5_000,
@@ -28,10 +34,12 @@ export function createQueryClient() {
 
 function Root() {
   return (
-    <EvidenceProvider>
-      <UnauthorizedRedirect />
-      <Outlet />
-    </EvidenceProvider>
+    <FeedbackProvider>
+      <EvidenceProvider>
+        <UnauthorizedRedirect />
+        <Outlet />
+      </EvidenceProvider>
+    </FeedbackProvider>
   );
 }
 

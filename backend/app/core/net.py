@@ -41,8 +41,12 @@ def _ip_is_public(ip: str) -> bool:
     return addr.is_global and not addr.is_multicast
 
 
-async def validate_public_url(url: str) -> None:
-    """Raise UnsafeURLError unless `url` is http(s) on a standard port and resolves only to public IPs."""
+async def validate_public_url(url: str) -> list[str]:
+    """Raise UnsafeURLError unless `url` is http(s) on a standard port and resolves only to public IPs.
+
+    Returns the validated addresses so callers can **pin** the connection to one of them — checking
+    a hostname and then letting the HTTP client resolve it again is a DNS-rebinding TOCTOU.
+    """
     try:
         parts = urlsplit(url)
         port = parts.port
@@ -70,6 +74,26 @@ async def validate_public_url(url: str) -> None:
         addresses = list({info[4][0] for info in infos})
     if not addresses or not all(_ip_is_public(a) for a in addresses):
         raise UnsafeURLError(f"Host {host} resolves to a non-public address.")
+    return addresses
+
+
+def _pinned_request(url: str, addresses: list[str]) -> tuple[str, str | None, str | None]:
+    """Rewrite `url` to dial a pre-validated address directly.
+
+    Returns (dial_url, host_header, sni_hostname). The Host header and TLS SNI keep the original
+    hostname so virtual hosting and certificate verification behave exactly as if we had dialed
+    the name — except the connection can no longer be re-resolved under us (DNS rebinding).
+    """
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    if not addresses or host in addresses:  # already an IP literal: nothing to pin
+        return url, None, None
+    target = addresses[0]
+    dial_host = f"[{target}]" if ":" in target else target
+    netloc = f"{dial_host}:{parts.port}" if parts.port else dial_host
+    dial_url = urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+    sni = host if parts.scheme == "https" else None
+    return dial_url, parts.netloc, sni
 
 
 @dataclass
@@ -191,20 +215,29 @@ class SourceHttp:
             hdrs["Authorization"] = "Basic " + base64.b64encode(f"{auth[0]}:{auth[1]}".encode()).decode()
         current = url
         for _ in range(MAX_REDIRECTS + 1):
+            addresses: list[str] = []
             if check_public:
-                await validate_public_url(current)
+                addresses = await validate_public_url(current) or []
+            dial_url, host_header, sni = _pinned_request(current, addresses)
             try:
                 async with self._limiter.for_url(current):
                     req = self._client.build_request(
-                        method, current, params=params, headers=hdrs, data=data,
+                        method, dial_url, params=params, headers=hdrs, data=data,
                         timeout=timeout or self._settings.http_timeout,
                     )
+                    if host_header:
+                        req.headers["Host"] = host_header
+                    if sni:
+                        req.extensions["sni_hostname"] = sni
                     resp = await self._client.send(req, stream=True, follow_redirects=False)
+                    # Everything we record or hand back uses the original hostname, never the
+                    # pinned address: `display_url` re-attaches it to the (params-merged) URL.
+                    display_url = req.url.copy_with(host=urlsplit(current).hostname) if host_header else str(req.url)
                     try:
                         if resp.is_redirect and "location" in resp.headers:
-                            self._record(method, str(req.url), resp.status_code, None)
-                            nxt = urljoin(str(req.url), resp.headers["location"])
-                            if urlsplit(nxt).netloc.lower() != urlsplit(str(req.url)).netloc.lower():
+                            self._record(method, str(display_url), resp.status_code, None)
+                            nxt = urljoin(current, resp.headers["location"])
+                            if urlsplit(nxt).netloc.lower() != urlsplit(current).netloc.lower():
                                 # Never forward credentials to a different host.
                                 hdrs = {k: v for k, v in hdrs.items() if k.lower() not in CREDENTIAL_HEADERS}
                             current = nxt
@@ -223,8 +256,8 @@ class SourceHttp:
             except (httpx.HTTPError, ResponseTooLarge) as exc:
                 self._record(method, current, None, f"{type(exc).__name__}: {exc}"[:500])
                 raise
-            self._record(method, str(req.url), resp.status_code, None)
-            return FetchResult(str(req.url), resp.status_code, resp.headers, bytes(body))
+            self._record(method, str(display_url), resp.status_code, None)
+            return FetchResult(str(display_url), resp.status_code, resp.headers, bytes(body))
         raise UnsafeURLError("Too many redirects.")
 
     def _record(self, method: str, url: str, status: int | None, error: str | None) -> None:

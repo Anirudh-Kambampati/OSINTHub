@@ -58,6 +58,26 @@ async def test_credentials_not_forwarded_across_hosts(monkeypatch):
         assert "authorization" not in final.calls.last.request.headers
 
 
+async def test_validated_requests_are_pinned_to_resolved_address(monkeypatch):
+    """The Host header and TLS SNI must carry the original hostname while we dial the pinned IP,
+    so virtual hosting and cert verification still work but the connection cannot be re-resolved."""
+    async def pinned(_url):
+        return ["203.0.113.7"]
+
+    monkeypatch.setattr(net, "validate_public_url", pinned)
+    with respx.mock(assert_all_called=True) as mock:
+        route = mock.get("https://203.0.113.7/api").respond(200, text="ok")
+        async with httpx.AsyncClient() as client:
+            http = net.SourceHttp(client, get_settings(), net.HostLimiter(), "test", [])
+            resp = await http.get("https://api.example.com/api")
+        assert resp.status_code == 200
+        sent = route.calls.last.request
+        assert sent.url.host == "203.0.113.7"          # dialed the pinned address
+        assert sent.headers["host"] == "api.example.com"  # virtual host preserved
+        assert sent.extensions.get("sni_hostname") == "api.example.com"  # cert verified for hostname
+        assert resp.url == "https://api.example.com/api"  # surfaced URL hides the pin
+
+
 async def test_transient_errors_retried_once_but_429_is_not(monkeypatch):
     async def allow(_url):
         return None

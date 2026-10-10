@@ -1,13 +1,16 @@
 import clsx from "clsx";
 import { RefreshCw, Trash2 } from "lucide-react";
+import { useState } from "react";
 import { NavLink, useNavigate } from "react-router";
 import { useEvidence } from "../../context/evidence";
+import { useFeedback } from "../../context/FeedbackContext";
 import { isActive, useDeleteInvestigation, useRerun } from "../../hooks/queries";
 import { formatDate } from "../../lib/format";
 import { SEED_TYPE_LABEL, attributeLabel } from "../../lib/meta";
 import type { InvestigationDetail, ProfileView } from "../../lib/types";
 import { ConfidenceBadge, InvestigationStatusBadge } from "../ui/indicators";
 import { Button, Skeleton } from "../ui/primitives";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { ProxiedAvatar } from "../ui/ProxiedAvatar";
 import { ExportMenu, InvestigationToolbar } from "./InvestigationToolbar";
 
@@ -34,8 +37,10 @@ const TABS = [
 export function InvestigationHeader({ inv, profile }: { inv: InvestigationDetail; profile: ProfileView | undefined }) {
   const { open } = useEvidence();
   const navigate = useNavigate();
+  const { notify } = useFeedback();
   const rerun = useRerun(inv.id);
   const del = useDeleteInvestigation();
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const running = isActive(inv.status);
   const image = profile?.images[0];
   const headline = HEADLINE_ATTRIBUTES.map((a) => profile?.attributes.find((x) => x.attribute === a)).filter(
@@ -120,14 +125,28 @@ export function InvestigationHeader({ inv, profile }: { inv: InvestigationDetail
               icon={<Trash2 className="size-3.5" />}
               disabled={running || del.isPending}
               aria-label="Delete investigation"
-              onClick={() => {
-                if (window.confirm(`Delete the investigation "${inv.title}" and all its collected data?`)) {
-                  del.mutate(inv.id, { onSuccess: () => navigate("/investigations") });
-                }
-              }}
+              onClick={() => setConfirmingDelete(true)}
             />
           </div>
         </div>
+
+        <ConfirmDialog
+          open={confirmingDelete}
+          title="Delete this investigation?"
+          body={<>“{inv.title}” and all of its collected data will be removed. This can’t be undone.</>}
+          confirmLabel="Delete"
+          busy={del.isPending}
+          onCancel={() => setConfirmingDelete(false)}
+          onConfirm={() => {
+            setConfirmingDelete(false);
+            del.mutate(inv.id, {
+              onSuccess: () => {
+                notify("success", "Investigation deleted.");
+                navigate("/investigations");
+              },
+            });
+          }}
+        />
 
         <nav className="-mb-px mt-5 flex gap-1 overflow-x-auto" aria-label="Investigation sections">
           {TABS.map((t) => (

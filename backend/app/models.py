@@ -288,3 +288,19 @@ class AuditEvent(Base):
     target: Mapped[str | None] = mapped_column(String(512), nullable=True)
     ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
     at: Mapped[datetime] = mapped_column(TZDateTime(), default=utcnow, index=True)
+
+
+class BootstrapLock(Base):
+    """Singleton settings row (key='bootstrap').
+
+    Its creation serializes first-admin registration: `INSERT ... ON CONFLICT DO NOTHING` takes
+    a write lock that concurrent bootstrap requests queue behind, so two racing registrations
+    can't both observe zero users and both mint an admin. The 'allow_registration' value mirrors
+    the OSINT_ALLOW_REGISTRATION setting and can be flipped at runtime by an admin.
+    """
+
+    __tablename__ = "bootstrap_lock"
+
+    key: Mapped[str] = mapped_column(String(32), primary_key=True)
+    allow_registration: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(TZDateTime(), default=utcnow)

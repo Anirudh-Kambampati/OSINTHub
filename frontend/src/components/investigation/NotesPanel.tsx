@@ -1,19 +1,27 @@
 import { Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useCurrentUser } from "../../context/auth";
+import { useFeedback } from "../../context/FeedbackContext";
 import { useAddNote, useDeleteNote, useNotes } from "../../hooks/queries";
 import { relativeTime } from "../../lib/format";
 import { Button, Card, ErrorNotice, Skeleton } from "../ui/primitives";
 
 export function NotesPanel({ investigationId }: { investigationId: string }) {
   const me = useCurrentUser();
+  const { notify } = useFeedback();
   const { data: notes, isLoading } = useNotes(investigationId);
   const add = useAddNote(investigationId);
   const del = useDeleteNote(investigationId);
   const [body, setBody] = useState("");
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (body.trim()) add.mutate(body.trim(), { onSuccess: () => setBody("") });
+    if (body.trim())
+      add.mutate(body.trim(), {
+        onSuccess: () => {
+          setBody("");
+          notify("success", "Note added.");
+        },
+      });
   };
   return (
     <Card title="Analyst notes">
@@ -40,7 +48,7 @@ export function NotesPanel({ investigationId }: { investigationId: string }) {
                 <span className="text-muted">{n.author_name ?? "Former user"}</span>
                 <span>{relativeTime(n.created_at)}</span>
                 {(n.author_id === me?.id || me?.role === "admin") && (
-                  <button type="button" aria-label="Delete note" onClick={() => del.mutate(n.id)}
+                  <button type="button" aria-label="Delete note" onClick={() => del.mutate(n.id, { onSuccess: () => notify("success", "Note deleted.") })}
                     className="ml-auto opacity-0 group-hover:opacity-100 hover:text-[var(--st-error)] focus:opacity-100">
                     <Trash2 className="size-3.5" />
                   </button>

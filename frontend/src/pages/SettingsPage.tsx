@@ -4,6 +4,7 @@ import { useNavigate } from "react-router";
 import { PlatformMark } from "../components/ui/indicators";
 import { Button, Card, ErrorNotice, Pill, SegmentedControl, Skeleton } from "../components/ui/primitives";
 import { useCurrentUser } from "../context/auth";
+import { useFeedback } from "../context/FeedbackContext";
 import { useAudit, useConnectors, useCreateUser, useUpdateUser, useUsers } from "../hooks/queries";
 import { api } from "../lib/api";
 import { formatDateTime, relativeTime } from "../lib/format";
@@ -15,11 +16,18 @@ const inputCls =
 
 function PasswordForm() {
   const navigate = useNavigate();
+  const { notify } = useFeedback();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const change = useMutation({
     mutationFn: () => api.changePassword(current, next),
-    onSuccess: () => navigate("/login", { replace: true }),
+    // Keep a failed change inline in the form (spec: password change shows an inline error,
+    // not a toast), so opt this mutation out of the global interceptor.
+    meta: { inlineError: true },
+    onSuccess: () => {
+      notify("success", "Password changed. Sign in again.");
+      navigate("/login", { replace: true });
+    },
   });
   return (
     <form
@@ -46,13 +54,20 @@ function PasswordForm() {
 
 function UserAdmin({ me }: { me: User }) {
   const { data: users, isLoading } = useUsers(true);
+  const { notify } = useFeedback();
   const create = useCreateUser();
   const update = useUpdateUser();
   const [form, setForm] = useState({ name: "", email: "", password: "", role: "analyst" as User["role"] });
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    create.mutate(form, { onSuccess: () => setForm({ name: "", email: "", password: "", role: "analyst" }) });
+    create.mutate(form, { onSuccess: () => {
+      setForm({ name: "", email: "", password: "", role: "analyst" });
+      notify("success", "User created.");
+    } });
   };
+  // Role/active toggles report on success; their failures surface via the global interceptor.
+  const onRole = (id: string, role: User["role"]) => update.mutate({ id, role }, { onSuccess: () => notify("success", "Role updated.") });
+  const onActive = (id: string, is_active: boolean) => update.mutate({ id, is_active }, { onSuccess: () => notify("success", "Access updated.") });
   return (
     <Card title="Users" bodyClassName="p-0">
       {isLoading || !users ? <Skeleton className="m-4 h-24" /> : (
@@ -77,7 +92,7 @@ function UserAdmin({ me }: { me: User }) {
                       aria-label={`Role for ${u.name}`}
                       value={u.role}
                       disabled={u.id === me.id}
-                      onChange={(e) => update.mutate({ id: u.id, role: e.target.value as User["role"] })}
+                      onChange={(e) => onRole(u.id, e.target.value as User["role"])}
                       className="rounded border border-line-strong bg-surface-2 px-1.5 py-0.5 text-xs text-fg"
                     >
                       <option value="analyst">Analyst</option>
@@ -90,7 +105,7 @@ function UserAdmin({ me }: { me: User }) {
                       size="sm"
                       variant={u.is_active ? "ghost" : "secondary"}
                       disabled={u.id === me.id}
-                      onClick={() => update.mutate({ id: u.id, is_active: !u.is_active })}
+                      onClick={() => onActive(u.id, !u.is_active)}
                     >
                       {u.is_active ? "Deactivate" : "Reactivate"}
                     </Button>
