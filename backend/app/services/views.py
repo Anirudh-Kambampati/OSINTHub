@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connectors.registry import CONNECTORS
-from app.core.confidence import IDENTITY_THRESHOLD, level, noisy_or
+from app.core.confidence import IDENTITY_THRESHOLD, MAX_INFERRED, level, noisy_or
 from app.core.enums import RELIABILITY_WEIGHT, EntityKind, Reliability, RunStatus, SourceCategory
 from app.models import (
     AnalystDecision, ConnectorRun, Entity, EntityMatch, Investigation, Mention, Observation, Relationship, Source,
@@ -223,7 +223,8 @@ async def build_profile(s: AsyncSession, inv: Investigation) -> ProfileView:
                 observation_id=obs.id, value=obs.value, confidence=obs.confidence, weight=round(weight, 4),
                 observed_at=obs.observed_at, source=source_out(src), entity=ref_out(entities[obs.entity_id]),
             ))
-        conf = round(noisy_or(per_connector.values()), 4)
+        # Agreement raises confidence, but an inferred attribute is never presented as certain.
+        conf = round(min(MAX_INFERRED, noisy_or(per_connector.values())), 4)
         values = [o.value for o, _ in items]
         attributes.append(IdentityAttribute(
             attribute=attr, value=max(set(values), key=values.count), normalized_value=norm, confidence=conf,

@@ -149,7 +149,8 @@ class StackExchangeConnector(Connector):
         for u in exact[:MAX_CANDIDATES]:
             site = u.get("website_url") or None
             emit_profile(f, PublicProfile(
-                platform="stackoverflow", username=str(u["user_id"]), url=u.get("link") or "",
+                platform="stackoverflow", username=u.get("display_name") or str(u["user_id"]), key=str(u["user_id"]),
+                url=u.get("link") or "",
                 name=u.get("display_name"), location=u.get("location"), website=site,
                 avatar=u.get("profile_image"), created_at=parse_datetime(u.get("creation_date")),
                 stats={"reputation": u.get("reputation")},

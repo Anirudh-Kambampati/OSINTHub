@@ -85,3 +85,8 @@ def test_csv_cells_neutralise_formulas():
     assert _cell('=HYPERLINK("http://evil")').startswith("'")
     assert _cell("@SUM(A1)") == "'@SUM(A1)"
     assert _cell("normal") == "normal"
+
+
+async def test_attribute_confidence_is_never_certain(api):
+    _, profile = await _investigation(api)
+    assert all(a["confidence"] <= 0.97 for a in profile["attributes"])

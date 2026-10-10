@@ -44,12 +44,14 @@ class MediumConnector(Connector):
             return ConnectorResult(RunStatus.NOT_FOUND, f, "Medium returned an empty feed.")
         m = TITLE_RE.match((channel.findtext("title") or "").strip())
         image = channel.find("image")
+        description = (channel.findtext("description") or "").strip()
         profile = PublicProfile(
             platform="medium",
             username=target,
             url=f"https://medium.com/@{target}",
             name=m.group(1) if m else None,
-            bio=channel.findtext("description"),
+            # Medium's channel description is boilerplate ("Stories by X on Medium"), not a bio.
+            bio=None if description.startswith("Stories by") else description or None,
             avatar=image.findtext("url") if image is not None else None,
         )
         ref, src = emit_profile(f, profile, category=self.category, reliability=self.reliability,

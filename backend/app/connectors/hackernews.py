@@ -59,7 +59,7 @@ class HackerNewsConnector(Connector):
         if not user:
             return ConnectorResult(RunStatus.NOT_FOUND, f, "No Hacker News user with this exact (case-sensitive) name.")
         about = html_to_text(user.get("about"))
-        urls = URL_RE.findall(about)
+        urls = [u.rstrip(".,;:!?") for u in URL_RE.findall(about)]
         linked = [s for u in urls if (s := parse_social_url(u))]
         websites = [u for u in urls if not parse_social_url(u)]
         profile = PublicProfile(

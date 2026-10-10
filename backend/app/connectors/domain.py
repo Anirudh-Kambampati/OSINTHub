@@ -1,5 +1,6 @@
 """Domain intelligence from public infrastructure records: DNS, RDAP, CT logs, web archive."""
 
+from datetime import UTC, datetime
 from typing import Any
 
 from app.connectors.base import (
@@ -216,18 +217,25 @@ class WaybackConnector(Connector):
     description = "First and latest public captures from the Internet Archive (CDX API)."
     timeout = 75.0
     CDX = "https://web.archive.org/cdx/search/cdx"
+    AVAILABLE = "https://archive.org/wayback/available"
 
     async def fetch(self, target: str, seed_type: SeedType, ctx: ConnectorContext) -> dict[str, Any]:
+        """Fast path: the availability API (closest snapshot to a date). It only reports clean 200
+        captures, so when it finds nothing we fall back to one CDX lookup, which is complete but slow."""
         key = normalize_url(target)
-        out = {}
-        for label, limit in (("first", 1), ("last", -1)):
-            resp = await ctx.http.get(self.CDX, params={
-                "url": key, "output": "json", "limit": limit, "fl": "timestamp,original,statuscode",
-                "filter": "statuscode:200",
-            }, timeout=35.0)
+        out: dict[str, Any] = {"first": None, "last": None}
+        for label, ts in (("first", "19960101"), ("last", datetime.now(UTC).strftime("%Y%m%d"))):
+            resp = await ctx.http.get(self.AVAILABLE, params={"url": key, "timestamp": ts}, timeout=20.0)
+            check_status(resp, self.label)
+            snap = ((resp.json() or {}).get("archived_snapshots") or {}).get("closest") or {}
+            if snap.get("timestamp"):
+                out[label] = [snap["timestamp"], snap.get("url"), snap.get("status")]
+        if not out["first"]:
+            resp = await ctx.http.get(self.CDX, params={"url": key, "output": "json", "limit": 1,
+                                                        "fl": "timestamp,original,statuscode"}, timeout=45.0)
             check_status(resp, self.label)
             rows = resp.json() if resp.content.strip() else []
-            out[label] = rows[1] if len(rows) > 1 else None
+            out["first"] = rows[1] if len(rows) > 1 else None
         return out
 
     def normalize(self, raw: dict[str, Any], target: str, seed_type: SeedType) -> ConnectorResult:

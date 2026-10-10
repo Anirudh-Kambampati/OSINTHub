@@ -142,7 +142,7 @@ h1{font-size:24px;margin:0}h2{font-size:15px;margin:28px 0 8px;border-bottom:1px
 table{width:100%;border-collapse:collapse;margin-top:6px}th,td{text-align:left;padding:5px 6px;border-bottom:1px solid #eceef1;vertical-align:top}
 th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#5f6772}td.num{text-align:right;font-variant-numeric:tabular-nums}
 .stats{display:flex;flex-wrap:wrap;gap:16px;margin-top:12px}.stats div{border:1px solid #d9dde3;border-radius:6px;padding:6px 12px}
-.stats b{display:block;font-size:18px}a{color:#2456c4;word-break:break-all}.note{white-space:pre-wrap;border-left:3px solid #c9ced6;padding-left:8px;margin:6px 0}
+.stats b{display:block;font-size:18px}a{color:#2456c4;overflow-wrap:anywhere}td.src{min-width:180px}.note{white-space:pre-wrap;border-left:3px solid #c9ced6;padding-left:8px;margin:6px 0}
 @media print{body{margin:0}a{color:inherit}}
 """
 
@@ -174,9 +174,12 @@ async def export_report_html(s: AsyncSession, inv: Investigation) -> str:
         "<th>Sources</th><th>Observed</th></tr>",
     ]
     for a in profile.attributes:
-        srcs = "<br>".join(_link(u, n) for n, u in sorted({(x.source.name, x.source.url) for x in a.evidence}))
+        srcs = ", ".join(_link(u, n) for n, u in sorted({(x.source.name, x.source.url) for x in a.evidence}))
+        seen = a.first_observed.date().isoformat()
+        if a.last_observed.date() != a.first_observed.date():
+            seen += f" – {a.last_observed.date().isoformat()}"
         parts.append(f"<tr><td>{e(a.attribute)}</td><td>{e(a.value)}</td><td class='num'>{_pct(a.confidence)}</td>"
-                     f"<td>{srcs}</td><td>{_fmt(a.first_observed)} – {_fmt(a.last_observed)}</td></tr>")
+                     f"<td class='src'>{srcs}</td><td>{seen}</td></tr>")
     parts.append("</table><h2>Profiles</h2><table><tr><th>Platform</th><th>Handle</th><th>Match</th>"
                  "<th>Evidence</th></tr>")
     for p in profile.profiles:

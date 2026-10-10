@@ -62,17 +62,24 @@ def fake_connectors() -> dict[str, Connector]:
 
 @pytest.fixture
 async def database():
-    fd, path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
-    db.configure_engine(f"sqlite+aiosqlite:///{path}")
+    """SQLite temp file by default; set OSINT_TEST_DATABASE_URL to run the suite on PostgreSQL."""
+    url = os.environ.get("OSINT_TEST_DATABASE_URL")
+    path = None
+    if not url:
+        fd, path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        url = f"sqlite+aiosqlite:///{path}"
+    db.configure_engine(url)
     async with db.engine.begin() as conn:
+        await conn.run_sync(db.Base.metadata.drop_all)
         await conn.run_sync(db.Base.metadata.create_all)
     yield db.session_factory()
     await db.engine.dispose()
-    try:
-        os.remove(path)
-    except OSError:
-        pass
+    if path:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
 
 
 @pytest.fixture

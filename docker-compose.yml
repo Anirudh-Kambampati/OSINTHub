@@ -1,22 +1,65 @@
-# Optional PostgreSQL for development. SQLite is used by default.
-#   docker compose up -d db
-#   cd backend && uv sync --extra postgres
-#   OSINT_DATABASE_URL=postgresql+asyncpg://osint:osint@localhost:5432/osint uv run alembic upgrade head
+# Full production-style stack: PostgreSQL, API, worker and the web console.
+#
+#   cp .env.example .env      # set OSINT_DB_PASSWORD, OSINT_OPERATOR_CONTACT, optional API keys
+#   docker compose up -d --build
+#   open http://localhost:8080   (first visit creates the admin account)
+#
+# Put a TLS-terminating reverse proxy in front for any non-local deployment.
+x-backend: &backend
+  build: ./backend
+  image: osint-console-backend:latest
+  restart: unless-stopped
+  env_file:
+    - path: .env
+      required: false
+  environment: &backend-env
+    OSINT_ENVIRONMENT: production
+    OSINT_DATABASE_URL: postgresql+asyncpg://osint:${OSINT_DB_PASSWORD:-change-me}@db:5432/osint
+    OSINT_LOG_JSON: "true"
+    OSINT_CORS_ORIGINS: '[]'
+  depends_on:
+    db:
+      condition: service_healthy
+
 services:
   db:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: osint
-      POSTGRES_PASSWORD: osint
+      POSTGRES_PASSWORD: ${OSINT_DB_PASSWORD:-change-me}
       POSTGRES_DB: osint
-    ports:
-      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U osint"]
       interval: 3s
-      retries: 10
+      retries: 20
+
+  api:
+    <<: *backend
+    environment:
+      <<: *backend-env
+      # Investigations run in the dedicated worker service.
+      OSINT_RUN_WORKER_IN_API: "false"
+
+  worker:
+    <<: *backend
+    command: ["python", "-m", "app.worker"]
+    healthcheck:
+      disable: true
+    depends_on:
+      api:
+        condition: service_healthy
+
+  web:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - "${OSINT_HTTP_PORT:-8080}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
 
 volumes:
   pgdata:
